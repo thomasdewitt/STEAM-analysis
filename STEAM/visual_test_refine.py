@@ -49,8 +49,8 @@ SEED = 3
 #   L0 finest_k = 10,000m, dx=5000 → cells must be even
 #   L1 finest_k ≈ 781m,   dx≈391  → cells must be even
 REFINEMENTS = [
-    (20, 256, 8),   # L1: 20 root cells → 256, dx≈391m (13x finer)
-    (40, 256, 8),   # L2: 40 L1 cells  → 256, dx≈61m  (82x total)
+    (10, 128, 8),   # L1: 
+    (10, 128, 8),   # L2
 ]
 
 # ── Witness camera parameters (tweak these!) ─────────────────────────────────
@@ -183,8 +183,8 @@ def build_nested_composite(nc_path, glimpse_pngs, groups, output_dir):
         group_info[group] = (abs_x, abs_y, extent_x, extent_y)
     ds.close()
 
-    # Upscale root image to high resolution
-    target_size = 4000
+    # Upscale root image to very high resolution so nested insets have detail
+    target_size = 16000
     root_img = Image.open(glimpse_pngs[0])
     aspect = root_img.size[0] / root_img.size[1]
     if aspect >= 1:
@@ -274,10 +274,20 @@ def main():
 
     # ── Refinement levels ────────────────────────────────────────────────────
     groups = ['/']
-    for level, (cells, output_nx, n_cls) in enumerate(REFINEMENTS, start=1):
+    for level, (cells_requested, output_nx, n_cls) in enumerate(REFINEMENTS, start=1):
         parent_group = groups[-1]
         parent_nx, parent_ny, parent_dx, parent_dy, finest_k = \
             read_group_grid_info(nc_path, parent_group)
+
+        # Snap cells to nearest valid value: cells * parent_dx must be
+        # an integer multiple of finest_k
+        cells_per_tile = finest_k / parent_dx
+        n_tiles = max(1, round(cells_requested * parent_dx / finest_k))
+        cells = int(round(n_tiles * cells_per_tile))
+        cells = min(cells, parent_nx)  # can't exceed parent grid
+        if cells != cells_requested:
+            print(f"  (adjusted cells {cells_requested} → {cells} for "
+                  f"integer-multiple constraint)")
 
         # Center the subdomain
         x_start = (parent_nx - cells) // 2
@@ -297,6 +307,12 @@ def main():
         print(f"  Extent: {inner_extent_x/1000:.1f} km, "
               f"slice [{x_start}:{x_stop}, {y_start}:{y_stop}]")
         print(f"{'='*60}")
+
+        # Check that refinement has room for at least 2 size classes
+        if finest_k <= 2 * new_dx:
+            print(f"  SKIPPING: parent finest_k ({finest_k:.1f}m) <= 2*dx "
+                  f"({2*new_dx:.1f}m), no room to refine further")
+            continue
 
         refine(
             nc_path,

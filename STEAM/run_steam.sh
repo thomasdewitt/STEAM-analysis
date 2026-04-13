@@ -30,6 +30,10 @@ for VAR in h qt cloud_fraction; do
         --steam_file_pattern "$PATTERN" \
         --no_show
 done
-python /Users/thomas/code-and-data/turbulon-analysis/scaling_functions/compare_scaling_4d_vs_profile.py 
+
+python /Users/thomas/code-and-data/turbulon-analysis/scaling_functions/plot_structure_functions.py --dataset STEAM --alt_min 3000 --alt_max 12000 --fit_min 4 --fit_max 32 --method haar --variable h --no_show
+python /Users/thomas/code-and-data/turbulon-analysis/scaling_functions/plot_structure_functions.py --dataset STEAM --alt_min 3000 --alt_max 12000 --fit_min 4 --fit_max 32 --method haar --variable qt --no_show
+python /Users/thomas/code-and-data/turbulon-analysis/scaling_functions/compare_scaling_4d_vs_profile.py --dataset STEAM --variable h --no_show
+python /Users/thomas/code-and-data/turbulon-analysis/scaling_functions/compare_scaling_4d_vs_profile.py --dataset STEAM --variable qt --no_show
 
 echo "Done — figures in $REPO/Figures/"

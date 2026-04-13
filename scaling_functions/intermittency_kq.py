@@ -16,10 +16,10 @@ VARIABLE = 'qt'
 # dropsonde:               q, ta, theta, rh, u, v, p, wspd, wdir
 METHOD = 'haar'   # 'haar' or 'structure_function'
 DIRECTION = 'x'                 # 'x' or 'z'
-ALT_MIN = 5000                  # Altitude subsetting in meters (None = use all)
-ALT_MAX = 6000
-MIN_SEP = 2
-MAX_SEP = 16
+ALT_MIN = 3000                  # Altitude subsetting in meters (None = use all)
+ALT_MAX = 12000
+MIN_SEP = 4
+MAX_SEP = 32
 ORDERS = np.arange(0.25, 3.25, 0.25)
 
 # ── Load data ──
@@ -67,7 +67,7 @@ else:
 from scaleinvariance import structure_function_analysis, haar_fluctuation_analysis, K as K_func
 from scipy.optimize import curve_fit
 
-ALPHA = 1.8  # Assumed Levy stability parameter for K(q) fit
+ALPHA = 2  # Assumed Levy stability parameter for K(q) fit
 
 xi = np.zeros(len(ORDERS))
 for i, q in enumerate(ORDERS):

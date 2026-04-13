@@ -75,6 +75,35 @@ def resolve_to_sam(variable):
     raise ValueError(f"Cannot map '{variable}' to SAM variable")
 
 
+# ── Standard variable names ────────────────────────────────────────────────
+# Standardized names: qt, qv, h, u, v, T
+# Maps standard name → native dataset variable name (None = not available)
+STANDARD_VARIABLE_MAP = {
+    'STEAM':            {'qv': 'qv',  'qt': 'qt',  'h': 'h',   'T': 'T',    'u': None,  'v': None},
+    'SAM_TWPICE':       {'qv': 'QV',  'qt': 'QT',  'h': 'MSE', 'T': 'TABS', 'u': 'U',   'v': 'V'},
+    'SAM_RCEMIP_large': {'qv': 'hus', 'qt': None,  'h': '__mse_computed__',  'T': 'ta',   'u': 'ua',  'v': 'va'},
+    'SAM_RCEMIP_small': {'qv': 'QV',  'qt': None,  'h': '__mse_computed__',  'T': 'TABS', 'u': 'U',   'v': 'V'},
+    'CM1_large':        {'qv': 'hus', 'qt': None,  'h': '__mse_computed__',  'T': 'ta',   'u': 'ua',  'v': 'va'},
+    'CM1_small':        {'qv': 'hus', 'qt': None,  'h': '__mse_computed__',  'T': 'ta',   'u': 'ua',  'v': 'va'},
+    'dropsonde':        {'qv': 'q',   'qt': None,  'h': 'mse', 'T': 'ta',   'u': 'u',   'v': 'v'},
+    'airplane':         {'qv': 'qv',  'qt': None,  'h': 'h',   'T': 'T',    'u': 'u',   'v': 'v'},
+}
+
+
+def resolve_standard_variable(variable, dataset_key):
+    """Map a standardized variable name to the dataset-native name.
+
+    Returns the native name string, or None if not available in this dataset.
+    If `variable` is not a recognized standard name, returns it unchanged
+    (backward compatibility with native names).
+    """
+    mapping = STANDARD_VARIABLE_MAP.get(dataset_key, {})
+    if variable in mapping:
+        return mapping[variable]  # may be None
+    # Not a standard name — assume it's already the native name
+    return variable
+
+
 # Display units and conversion factors (multiply raw data by factor to get display units)
 # SAM stores mixing ratios in kg/kg, temperature in K, MSE in J/kg
 # STEAM stores same conventions
@@ -99,10 +128,17 @@ VARIABLE_UNITS = {
     # Dropsonde variables
     'q':     ('g/kg',  1e3),
     'ta':    ('K',     1.0),
+    'mse':   ('K',     1.0 / 1004.0),   # J/kg → K (divide by CP)
     'theta': ('K',     1.0),
     'rh':    ('',      1.0),
     'wspd':  ('m/s',   1.0),
     'wdir':  ('deg',   1.0),
+    # Airplane variables (stored in display units already)
+    'airplane_T':   ('K',    1.0),        # stored in K
+    'airplane_qv':  ('g/kg', 1.0),        # stored in g/kg
+    'airplane_h':   ('K',    1000/1004),   # kJ/kg → K (divide by CP/1000)
+    'airplane_u':   ('m/s',  1.0),
+    'airplane_v':   ('m/s',  1.0),
     # RCEMIP CF-convention variables (SAM_CRM large and CM1)
     'hus':   ('g/kg',  1e3),   # specific humidity kg/kg -> g/kg
     'ua':    ('m/s',   1.0),
@@ -130,6 +166,6 @@ def get_unit_factor(variable):
     return VARIABLE_UNITS.get(variable, ('', 1.0))[1]
 
 # Shared analysis constants
-MAX_HEIGHT = 12000   # meters
+MAX_HEIGHT = 20000   # meters
 MIN_HEIGHT = 100     # meters
 HORIZ_STRIDE = 256    # subsample every nth horizontal point

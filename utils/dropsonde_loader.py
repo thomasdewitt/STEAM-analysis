@@ -6,15 +6,24 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
-from config import DROPSONDE_FILE, MAX_HEIGHT, MIN_HEIGHT, get_unit_factor
+from config import DROPSONDE_FILE, MAX_HEIGHT, MIN_HEIGHT, get_unit_factor, resolve_standard_variable
 
 
 def load_dropsonde_variable(variable):
     """Load a dropsonde variable.
 
+    Parameters
+    ----------
+    variable : str
+        Standardized name (qv, T, u, v) or native dropsonde name (q, ta...).
+
     Returns (z, data_2d) where data_2d has shape (n_sondes, n_alt).
     Data is returned in display units.
     """
+    native = resolve_standard_variable(variable, 'dropsonde')
+    if native is None:
+        raise ValueError(f"Variable '{variable}' is not available for dropsonde dataset.")
+    variable = native
     filepath = _ROOT / DROPSONDE_FILE
     with nc.Dataset(filepath, 'r') as ds:
         z = ds.variables['altitude'][:]
@@ -35,10 +44,9 @@ def load_dropsonde_variable_interpolated(variable, min_height=None, max_height=N
         min_height = MIN_HEIGHT
     if max_height is None:
         max_height = MAX_HEIGHT
-    if vert_spacing is None:
-        vert_spacing = 100
-
     z_orig, data_4d, dx = load_dropsonde_variable(variable)
+    if vert_spacing is None:
+        vert_spacing = float(np.round(np.mean(np.diff(z_orig))))
 
     z_uniform = np.arange(min_height, max_height + vert_spacing, vert_spacing)
     interp_func = interp1d(z_orig, data_4d, axis=-1, kind='linear',

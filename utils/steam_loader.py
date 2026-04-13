@@ -4,7 +4,8 @@ from scipy.interpolate import interp1d
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config import STEAM_DATA_DIR, STEAM_FILE_PATTERN, MAX_HEIGHT, MIN_HEIGHT, HORIZ_STRIDE, get_unit_factor
+from config import (STEAM_DATA_DIR, STEAM_FILE_PATTERN, MAX_HEIGHT, MIN_HEIGHT,
+                    HORIZ_STRIDE, get_unit_factor, resolve_standard_variable)
 
 
 def load_steam_variable(variable, seed_files=None, horiz_stride=None,
@@ -15,6 +16,8 @@ def load_steam_variable(variable, seed_files=None, horiz_stride=None,
 
     Parameters
     ----------
+    variable : str
+        Standardized name (qv, qt, h, T) or native STEAM name.
     data_dir : str or Path, optional
         Directory to search for files (used only when seed_files is None).
         Defaults to STEAM_DATA_DIR from config.
@@ -22,6 +25,10 @@ def load_steam_variable(variable, seed_files=None, horiz_stride=None,
         Glob pattern for auto-discovery (used only when seed_files is None).
         Defaults to 'steam_twpice_seed_*.nc'.
     """
+    native = resolve_standard_variable(variable, 'STEAM')
+    if native is None:
+        raise ValueError(f"Variable '{variable}' is not available for STEAM dataset.")
+    variable = native
     if seed_files is None:
         _dir = Path(data_dir) if data_dir is not None else Path(STEAM_DATA_DIR)
         _pat = file_pattern if file_pattern is not None else STEAM_FILE_PATTERN
@@ -44,7 +51,7 @@ def load_steam_variable(variable, seed_files=None, horiz_stride=None,
             if z is None:
                 z = ds.variables['z'][:]
                 x = ds.variables['x'][:]
-                dx = float(x[1] - x[0]) * horiz_stride
+                dx = float(x[1] - x[0])
             data = ds.variables[variable][:, ::horiz_stride, :]
             data_list.append(data)
 
@@ -64,11 +71,10 @@ def load_steam_variable_interpolated(variable, seed_files=None, horiz_stride=Non
         min_height = MIN_HEIGHT
     if max_height is None:
         max_height = MAX_HEIGHT
-    if vert_spacing is None:
-        vert_spacing = 100
-
     z_orig, data_4d, dx = load_steam_variable(variable, seed_files, horiz_stride,
                                                data_dir=data_dir, file_pattern=file_pattern)
+    if vert_spacing is None:
+        vert_spacing = float(np.round(np.mean(np.diff(z_orig))))
 
     z_uniform = np.arange(min_height, max_height + vert_spacing, vert_spacing)
     interp_func = interp1d(z_orig, data_4d, axis=-1, kind='linear',
