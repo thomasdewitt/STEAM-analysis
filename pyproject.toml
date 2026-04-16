@@ -1,0 +1,19 @@
+[project]
+name = "turbulon-analysis"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "xarray",
+    "netCDF4",
+    "Pillow",
+    "steam",
+    "cloudyview",
+    "numba>=0.65.0",
+]
+
+[tool.uv.sources]
+steam = { path = "../turbulon-model", editable = true }
+cloudyview = { path = "../cloudyview", editable = true }

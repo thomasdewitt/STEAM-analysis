@@ -1,9 +1,9 @@
 """Visual test for 3-level recursive STEAM refinement.
 
-Runs a coarse parent simulation, then two recursive refinements, each
-zooming into a centered subdomain of the previous level. Produces:
-  - glimpse (top-down) images for each level
-  - witness (ground-perspective) renders for each level
+Runs N coarse parent simulations (different seeds), each with two
+recursive refinements zooming into a centered subdomain. Produces
+one glimpse (top-down) image per level, with a box showing the
+region that was refined into the next level.
 
 Usage:
     python STEAM/visual_test_refine.py
@@ -24,10 +24,11 @@ from steam.thermodynamics import recover_diagnostics
 
 # ── Parent simulation parameters ─────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
+NSIMS            = 10
 NX, NY           = 256, 256
-DX, DY           = 5000.0, 5000.0
+DX, DY           = 15000.0, 15000.0
 OUTER_SCALE      = DX * 256
-SPHEROSCALE      = 100.0
+SPHEROSCALE      = 20.0
 DOMAIN_HEIGHT    = 20000.0
 SPARSITY_FACTORS = (1, 1, 1)
 SURFACE_PRESSURE = 101325.0
@@ -35,32 +36,25 @@ H_MAX = 400 * 1004
 H_MIN = 250 * 1004
 QT_MIN = 0
 QT_MAX = 30 / 1000
-N_SIZE_CLASSES = 30
-SEED = 3
+N_SIZE_CLASSES = 15
+BASE_SEED = 3
 
 # ── Refinement parameters (per level) ────────────────────────────────────────
-# Each entry: (cells_per_side, output_nx, n_size_classes)
+# Each entry: (cells_per_side, output_nx, n_size_classes, z_min, z_max)
 #   cells_per_side: number of parent-grid cells to extract (centered)
 #   output_nx: target output grid cells per side
 #   n_size_classes: size classes for this refinement level
+#   z_min, z_max: optional vertical bounds (m); None = inherit from parent
 #
 # Constraints: cells * parent_dx must be an integer multiple of parent's
 # finest k. With these params:
 #   L0 finest_k = 10,000m, dx=5000 → cells must be even
 #   L1 finest_k ≈ 781m,   dx≈391  → cells must be even
 REFINEMENTS = [
-    (10, 128, 8),   # L1: 
-    (10, 128, 8),   # L2
+    (20, 256, 8, None, None),   
+    (20, 256, 8, 0, 10000),     
+    (150, 1024, 8, 0, 4000),     
 ]
-
-# ── Witness camera parameters (tweak these!) ─────────────────────────────────
-# Camera position in relative coords: ±1 = domain edge, z: -1=ground, +1=top
-CAMERA_POSITION  = (0.0, -0.95, -0.999)
-CAMERA_AZIMUTH   = 0       # degrees: 0=North, 90=East, 180=South, 270=West
-CAMERA_ELEVATION = 25      # degrees above horizon
-CAMERA_FOV       = 100     # field of view in degrees
-WITNESS_QUALITY  = 'high'  # min, low, medium, high
-WITNESS_SIZE     = (1600, 1000)  # or None to use quality preset
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DATA_DIR  = Path(__file__).resolve().parent / 'data'
@@ -102,38 +96,50 @@ def compute_diagnostics_group(nc_path, group_name):
     print(f"  Diagnostics written to '{group_name}'")
 
 
-def run_cloudyview(nc_path, tool, output_dir, group=None, suffix=""):
-    """Run a cloudyview tool (glimpse or witness) and rename the output."""
-    cmd = [tool, str(nc_path)]
-    if tool == "witness":
-        cmd.append(WITNESS_QUALITY)
-    cmd += ["-o", str(output_dir)]
+def run_glimpse(nc_path, output_dir, group=None, suffix=""):
+    """Run glimpse and rename the output."""
+    cmd = ["glimpse", str(nc_path), "-o", str(output_dir)]
     if group:
         cmd += ["--group", group]
-    if tool == "witness":
-        cx, cy, cz = CAMERA_POSITION
-        cmd += ["--camera-position", str(cx), str(cy), str(cz)]
-        cmd += ["--camera-azimuth", str(CAMERA_AZIMUTH)]
-        cmd += ["--camera-elevation", str(CAMERA_ELEVATION)]
-        cmd += ["--fov", str(CAMERA_FOV)]
-        if WITNESS_SIZE:
-            cmd += ["--size", str(WITNESS_SIZE[0]), str(WITNESS_SIZE[1])]
     print(f"  {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
 
     stem = nc_path.stem
-    default_name = {
-        "glimpse": f"cloudyview_glimpse_top_view_{stem}.png",
-        "witness": f"witness_{stem}.png",
-    }[tool]
+    default_name = f"cloudyview_glimpse_top_view_{stem}.png"
     out_png = output_dir / default_name
     if suffix:
-        renamed = output_dir / f"refine_{tool}_{suffix}.png"
+        renamed = output_dir / f"refine_glimpse_{suffix}.png"
         if renamed.exists():
             renamed.unlink()
         out_png.rename(renamed)
         out_png = renamed
     return out_png
+
+
+def draw_child_box(glimpse_png, parent_nx, parent_ny, x_start, x_stop, y_start, y_stop):
+    """Draw a rectangle on a glimpse image showing the child refinement region."""
+    from PIL import Image, ImageDraw
+
+    img = Image.open(glimpse_png)
+    w, h = img.size
+    draw = ImageDraw.Draw(img)
+
+    # Approximate matplotlib plot area margins
+    margin_l = int(w * 0.125)
+    margin_r = int(w * 0.89)
+    margin_t = int(h * 0.07)
+    margin_b = int(h * 0.89)
+    plot_w = margin_r - margin_l
+    plot_h = margin_b - margin_t
+
+    # Fractional position of the child region within the parent grid
+    px_x = margin_l + int(x_start / parent_nx * plot_w)
+    px_y = margin_t + int(y_start / parent_ny * plot_h)
+    px_x2 = margin_l + int(x_stop / parent_nx * plot_w)
+    px_y2 = margin_t + int(y_stop / parent_ny * plot_h)
+
+    draw.rectangle([px_x, px_y, px_x2, px_y2], outline='#ff3333', width=3)
+    img.save(glimpse_png)
 
 
 def read_group_grid_info(nc_path, group='/'):
@@ -150,89 +156,109 @@ def read_group_grid_info(nc_path, group='/'):
     return nx, ny, dx, dy, finest_k
 
 
-def build_nested_composite(nc_path, glimpse_pngs, groups, output_dir):
-    """Build a high-res composite with all refinement levels nested in root.
+def run_one_simulation(sim_id, seed, h_profile, qt_profile, profile_dz):
+    """Run parent + refinements for a single seed, render glimpses."""
+    nc_path = DATA_DIR / f'refine_test_{sim_id:03d}.nc'
 
-    Each refinement is placed at its correct position relative to the root
-    domain by chaining parent_x_offset / parent_y_offset through the group
-    hierarchy. The root glimpse is upscaled to 4000px for clarity.
-    """
-    from PIL import Image, ImageDraw
+    # ── Level 0: Parent simulation ───────────────────────────────────────
+    print(f"\n{'='*60}")
+    print(f"[Sim {sim_id}] Level 0 (parent): {NX}x{NY} @ dx={DX:.0f}m")
+    print(f"  Domain: {NX*DX/1000:.0f} km x {NY*DY/1000:.0f} km")
+    print(f"{'='*60}")
+    simulate(
+        h_profile=h_profile, qt_profile=qt_profile,
+        nx=NX, ny=NY, dx=DX, dy=DY,
+        outer_scale=OUTER_SCALE, spheroscale=SPHEROSCALE,
+        domain_height=DOMAIN_HEIGHT, profile_dz=profile_dz,
+        output_path=nc_path,
+        sparsity_factors=SPARSITY_FACTORS,
+        surface_pressure=SURFACE_PRESSURE,
+        seed=seed,
+        h_max=H_MAX, h_min=H_MIN,
+        qt_min=QT_MIN, qt_max=QT_MAX,
+        n_size_classes=N_SIZE_CLASSES,
+    )
+    from steam.thermodynamics import compute_diagnostics
+    compute_diagnostics(nc_path)
 
-    # Read root domain extent
-    ds = netCDF4.Dataset(nc_path, "r")
-    root_nx = len(ds.dimensions["x"])
-    root_ny = len(ds.dimensions["y"])
-    root_dx = float(ds.dx)
-    root_dy = float(ds.dy)
-    domain_x = root_nx * root_dx
-    domain_y = root_ny * root_dy
+    # ── Refinement levels ────────────────────────────────────────────────
+    groups = ['/']
+    # Store child region info per level so we can draw boxes
+    child_regions = {}
 
-    # For each refinement group, compute absolute offset and extent
-    # relative to root domain (chain through parent hierarchy)
-    group_info = {}
-    for group in groups[1:]:  # skip root
-        grp = ds[group]
-        x_coords = grp.variables["x"][:]
-        y_coords = grp.variables["y"][:]
-        extent_x = float(x_coords[-1] - x_coords[0]) + float(grp.dx)
-        extent_y = float(y_coords[-1] - y_coords[0]) + float(grp.dy)
-        # x_coords[0] is the absolute offset (set in refine())
-        abs_x = float(x_coords[0])
-        abs_y = float(y_coords[0])
-        group_info[group] = (abs_x, abs_y, extent_x, extent_y)
-    ds.close()
+    for level, (cells_requested, output_nx, n_cls, z_min, z_max) in enumerate(REFINEMENTS, start=1):
+        parent_group = groups[-1]
+        parent_nx, parent_ny, parent_dx, parent_dy, finest_k = \
+            read_group_grid_info(nc_path, parent_group)
 
-    # Upscale root image to very high resolution so nested insets have detail
-    target_size = 16000
-    root_img = Image.open(glimpse_pngs[0])
-    aspect = root_img.size[0] / root_img.size[1]
-    if aspect >= 1:
-        new_w, new_h = target_size, int(target_size / aspect)
-    else:
-        new_w, new_h = int(target_size * aspect), target_size
-    composite = root_img.resize((new_w, new_h), Image.LANCZOS)
-    draw = ImageDraw.Draw(composite)
+        # Snap cells to nearest valid value
+        cells_per_tile = finest_k / parent_dx
+        n_tiles = max(1, round(cells_requested * parent_dx / finest_k))
+        cells = int(round(n_tiles * cells_per_tile))
+        cells = min(cells, parent_nx)
+        if cells != cells_requested:
+            print(f"  (adjusted cells {cells_requested} → {cells} for "
+                  f"integer-multiple constraint)")
 
-    # Detect plot area bounds from the image
-    # glimpse matplotlib: approximate margins
-    margin_l = int(new_w * 0.125)
-    margin_r = int(new_w * 0.89)
-    margin_t = int(new_h * 0.07)
-    margin_b = int(new_h * 0.89)
-    plot_w = margin_r - margin_l
-    plot_h = margin_b - margin_t
+        # Center the subdomain
+        x_start = (parent_nx - cells) // 2
+        x_stop = x_start + cells
+        y_start = (parent_ny - cells) // 2
+        y_stop = y_start + cells
 
-    colors = ['#ff3333', '#33ff33', '#3399ff']
+        # Record child region for the parent's glimpse
+        child_regions[parent_group] = (parent_nx, parent_ny, x_start, x_stop, y_start, y_stop)
 
-    for i, (group, g_png) in enumerate(zip(groups[1:], glimpse_pngs[1:])):
-        abs_x, abs_y, extent_x, extent_y = group_info[group]
+        inner_extent_x = cells * parent_dx
+        new_dx = inner_extent_x / output_nx
+        new_dy = new_dx
 
-        frac_x = extent_x / domain_x
-        frac_y = extent_y / domain_y
-        offset_frac_x = abs_x / domain_x
-        offset_frac_y = abs_y / domain_y
+        print(f"\n{'='*60}")
+        print(f"[Sim {sim_id}] Level {level}: {cells}x{cells} cells from "
+              f"{'root' if parent_group == '/' else parent_group}")
+        print(f"  → {output_nx}x{output_nx} @ dx={new_dx:.1f}m "
+              f"({parent_dx/new_dx:.0f}x finer, {DX/new_dx:.0f}x vs root)")
+        print(f"  Extent: {inner_extent_x/1000:.1f} km, "
+              f"slice [{x_start}:{x_stop}, {y_start}:{y_stop}]")
+        print(f"{'='*60}")
 
-        px_x = margin_l + int(offset_frac_x * plot_w)
-        px_y = margin_t + int(offset_frac_y * plot_h)
-        px_w = max(1, int(frac_x * plot_w))
-        px_h = max(1, int(frac_y * plot_h))
+        if finest_k <= 2 * new_dx:
+            print(f"  SKIPPING: parent finest_k ({finest_k:.1f}m) <= 2*dx "
+                  f"({2*new_dx:.1f}m), no room to refine further")
+            continue
 
-        # Draw border
-        color = colors[i % len(colors)]
-        border = 3
-        draw.rectangle([px_x - border, px_y - border,
-                         px_x + px_w + border - 1, px_y + px_h + border - 1],
-                        outline=color, width=border)
+        refine(
+            nc_path,
+            x_start=x_start, x_stop=x_stop,
+            y_start=y_start, y_stop=y_stop,
+            dx=new_dx, dy=new_dy,
+            parent_group=parent_group,
+            n_size_classes=n_cls,
+            seed=seed + 1000 * level,
+            z_min=z_min,
+            z_max=z_max,
+        )
 
-        # Paste refined glimpse
-        fine_img = Image.open(g_png)
-        fine_resized = fine_img.resize((px_w, px_h), Image.LANCZOS)
-        composite.paste(fine_resized, (px_x, px_y))
+        group_name = f"refinements/r{level - 1}"
+        compute_diagnostics_group(nc_path, group_name)
+        groups.append(group_name)
 
-    out_path = output_dir / "refine_composite_all_levels.png"
-    composite.save(out_path, quality=95)
-    print(f"  Nested composite: {out_path}")
+    # ── Render glimpse for each level ────────────────────────────────────
+    level_names = ['L0_root'] + [f'L{i}' for i in range(1, len(groups))]
+
+    print(f"\n{'='*60}")
+    print(f"[Sim {sim_id}] Rendering glimpses")
+    print(f"{'='*60}")
+
+    for group, name in zip(groups, level_names):
+        grp_arg = None if group == '/' else group
+        suffix = f"{name}_sim{sim_id:03d}"
+        g_png = run_glimpse(nc_path, OUTPUT_DIR, group=grp_arg, suffix=suffix)
+
+        # Draw box showing child region if this level was refined
+        if group in child_regions:
+            parent_nx, parent_ny, x_start, x_stop, y_start, y_stop = child_regions[group]
+            draw_child_box(g_png, parent_nx, parent_ny, x_start, x_stop, y_start, y_stop)
 
 
 def main():
@@ -249,125 +275,10 @@ def main():
     h_profile = h_profile[mask]
     qt_profile = qt_profile[mask]
 
-    nc_path = DATA_DIR / 'refine_test.nc'
-
-    # ── Level 0: Parent simulation ───────────────────────────────────────────
-    print(f"\n{'='*60}")
-    print(f"Level 0 (parent): {NX}x{NY} @ dx={DX:.0f}m")
-    print(f"  Domain: {NX*DX/1000:.0f} km x {NY*DY/1000:.0f} km")
-    print(f"{'='*60}")
-    simulate(
-        h_profile=h_profile, qt_profile=qt_profile,
-        nx=NX, ny=NY, dx=DX, dy=DY,
-        outer_scale=OUTER_SCALE, spheroscale=SPHEROSCALE,
-        domain_height=DOMAIN_HEIGHT, profile_dz=profile_dz,
-        output_path=nc_path,
-        sparsity_factors=SPARSITY_FACTORS,
-        surface_pressure=SURFACE_PRESSURE,
-        seed=SEED,
-        h_max=H_MAX, h_min=H_MIN,
-        qt_min=QT_MIN, qt_max=QT_MAX,
-        n_size_classes=N_SIZE_CLASSES,
-    )
-    from steam.thermodynamics import compute_diagnostics
-    compute_diagnostics(nc_path)
-
-    # ── Refinement levels ────────────────────────────────────────────────────
-    groups = ['/']
-    for level, (cells_requested, output_nx, n_cls) in enumerate(REFINEMENTS, start=1):
-        parent_group = groups[-1]
-        parent_nx, parent_ny, parent_dx, parent_dy, finest_k = \
-            read_group_grid_info(nc_path, parent_group)
-
-        # Snap cells to nearest valid value: cells * parent_dx must be
-        # an integer multiple of finest_k
-        cells_per_tile = finest_k / parent_dx
-        n_tiles = max(1, round(cells_requested * parent_dx / finest_k))
-        cells = int(round(n_tiles * cells_per_tile))
-        cells = min(cells, parent_nx)  # can't exceed parent grid
-        if cells != cells_requested:
-            print(f"  (adjusted cells {cells_requested} → {cells} for "
-                  f"integer-multiple constraint)")
-
-        # Center the subdomain
-        x_start = (parent_nx - cells) // 2
-        x_stop = x_start + cells
-        y_start = (parent_ny - cells) // 2
-        y_stop = y_start + cells
-
-        inner_extent_x = cells * parent_dx
-        new_dx = inner_extent_x / output_nx
-        new_dy = new_dx
-
-        print(f"\n{'='*60}")
-        print(f"Level {level}: {cells}x{cells} cells from "
-              f"{'root' if parent_group == '/' else parent_group}")
-        print(f"  → {output_nx}x{output_nx} @ dx={new_dx:.1f}m "
-              f"({parent_dx/new_dx:.0f}x finer, {DX/new_dx:.0f}x vs root)")
-        print(f"  Extent: {inner_extent_x/1000:.1f} km, "
-              f"slice [{x_start}:{x_stop}, {y_start}:{y_stop}]")
-        print(f"{'='*60}")
-
-        # Check that refinement has room for at least 2 size classes
-        if finest_k <= 2 * new_dx:
-            print(f"  SKIPPING: parent finest_k ({finest_k:.1f}m) <= 2*dx "
-                  f"({2*new_dx:.1f}m), no room to refine further")
-            continue
-
-        refine(
-            nc_path,
-            x_start=x_start, x_stop=x_stop,
-            y_start=y_start, y_stop=y_stop,
-            dx=new_dx, dy=new_dy,
-            parent_group=parent_group,
-            n_size_classes=n_cls,
-            seed=SEED + 1000 * level,
-        )
-
-        group_name = f"refinements/r{level - 1}"
-        compute_diagnostics_group(nc_path, group_name)
-        groups.append(group_name)
-
-    # ── Render all levels ────────────────────────────────────────────────────
-    level_names = ['L0_root'] + [f'L{i}' for i in range(1, len(groups))]
-
-    print(f"\n{'='*60}")
-    print("Rendering glimpse + witness for each level")
-    print(f"{'='*60}")
-
-    glimpse_pngs = []
-    for group, name in zip(groups, level_names):
-        grp_arg = None if group == '/' else group
-        g_png = run_cloudyview(nc_path, "glimpse", OUTPUT_DIR,
-                               group=grp_arg, suffix=name)
-        glimpse_pngs.append(g_png)
-        run_cloudyview(nc_path, "witness", OUTPUT_DIR,
-                       group=grp_arg, suffix=name)
-
-    # ── Composite: nest all refinement levels into the root glimpse ──────────
-    print(f"\n{'='*60}")
-    print("Building nested composite glimpse")
-    print(f"{'='*60}")
-    build_nested_composite(nc_path, glimpse_pngs, groups, OUTPUT_DIR)
-
-    # ── Print witness commands for manual use ────────────────────────────────
-    cx, cy, cz = CAMERA_POSITION
-    print(f"\n{'='*60}")
-    print("Witness commands (copy-paste to tweak camera):")
-    print(f"{'='*60}")
-    for group, name in zip(groups, level_names):
-        cmd = f"witness {nc_path} {WITNESS_QUALITY}"
-        cmd += f" --camera-position {cx} {cy} {cz}"
-        cmd += f" --camera-azimuth {CAMERA_AZIMUTH}"
-        cmd += f" --camera-elevation {CAMERA_ELEVATION}"
-        cmd += f" --fov {CAMERA_FOV}"
-        if group != '/':
-            cmd += f" --group {group}"
-        if WITNESS_SIZE:
-            cmd += f" --size {WITNESS_SIZE[0]} {WITNESS_SIZE[1]}"
-        cmd += f" -o {OUTPUT_DIR}"
-        print(f"\n# {name}")
-        print(cmd)
+    for i in range(NSIMS):
+        seed = BASE_SEED + i
+        run_one_simulation(sim_id=i, seed=seed, h_profile=h_profile,
+                           qt_profile=qt_profile, profile_dz=profile_dz)
 
 
 if __name__ == '__main__':

@@ -47,7 +47,7 @@ LV = 2.501e6   # J / kg
 # ── Common output height grid ─────────────────────────────────────────────────
 Z_COMMON = np.arange(50.0, 33001.0, 100.0)   # 330 levels, 50–33 000 m
 
-BASE = '/Volumes/BLUE/RCEMIP'
+BASE = '/run/media/thomas/BLUE/RCEMIP'
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
