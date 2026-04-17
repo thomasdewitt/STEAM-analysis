@@ -15,9 +15,10 @@ VARIABLE = 'qt'
 # STEAM:                   qv, qt, qc, qi, h, T, p
 # dropsonde:               q, ta, theta, rh, u, v, p, wspd, wdir
 METHOD = 'haar'   # 'haar' or 'structure_function'
-DIRECTION = 'x'                 # 'x' or 'z'
-ALT_MIN = 3000                  # Altitude subsetting in meters (None = use all)
-ALT_MAX = 12000
+DIRECTION = 'x'                 # 'x' (horizontal) or 'z' (vertical)
+STEAM_GROUP = 'cubes'          # STEAM only: 'parent', 'strips', 'cubes', or explicit path
+ALT_MIN = 1000                  # Altitude subsetting in meters (None = use all)
+ALT_MAX = 2000
 MIN_SEP = 4
 MAX_SEP = 32
 ORDERS = np.arange(0.25, 3.25, 0.25)
@@ -34,7 +35,7 @@ elif DATASET == 'CM1':
     z, data, dx = load_cm1_variable_interpolated(VARIABLE, experiment=EXPERIMENT)
 elif DATASET == 'STEAM':
     from utils.steam_loader import load_steam_variable_interpolated
-    z, data, dx = load_steam_variable_interpolated(VARIABLE)
+    z, data, dx = load_steam_variable_interpolated(VARIABLE, group=STEAM_GROUP)
 elif DATASET == 'dropsonde':
     from utils.dropsonde_loader import load_dropsonde_variable_interpolated
     z, data, dx = load_dropsonde_variable_interpolated(VARIABLE)

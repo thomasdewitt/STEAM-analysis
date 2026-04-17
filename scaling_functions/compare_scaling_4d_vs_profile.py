@@ -19,11 +19,12 @@ _DEFAULTS = dict(
     experiment='RCE_large300',
     variable='qt',
     method='haar',
+    steam_group='strips',
     no_show=False,
 )
 
 
-def _load_data(dataset, variable, experiment=None):
+def _load_data(dataset, variable, experiment=None, steam_group=None):
     if dataset == 'SAM_TWPICE':
         from utils.sam_twpice_loader import load_sam_twpice_variable_interpolated
         return load_sam_twpice_variable_interpolated(variable)
@@ -35,7 +36,7 @@ def _load_data(dataset, variable, experiment=None):
         return load_cm1_variable_interpolated(variable, experiment=experiment)
     elif dataset == 'STEAM':
         from utils.steam_loader import load_steam_variable_interpolated
-        return load_steam_variable_interpolated(variable)
+        return load_steam_variable_interpolated(variable, group=steam_group)
     elif dataset == 'dropsonde':
         from utils.dropsonde_loader import load_dropsonde_variable_interpolated
         return load_dropsonde_variable_interpolated(variable)
@@ -44,11 +45,11 @@ def _load_data(dataset, variable, experiment=None):
 
 
 def compare_scaling_4d_vs_profile(dataset, variable, experiment=None,
-                                   method='haar', show=True):
+                                   method='haar', steam_group=None, show=True):
     """Compare Haar/structure-function scaling of the full 4D volume vs the mean profile."""
     from config import get_unit_label
 
-    z, data, _ = _load_data(dataset, variable, experiment)
+    z, data, _ = _load_data(dataset, variable, experiment, steam_group=steam_group)
     unit = get_unit_label(variable)
 
     vert_spacing = np.median(np.diff(z))
@@ -113,6 +114,9 @@ def _parse_args():
                    help='SAM_RCEMIP/CM1 only: RCE_large300 or RCE_small_les300')
     p.add_argument('--method', default=_DEFAULTS['method'],
                    choices=['haar', 'structure_function'])
+    p.add_argument('--steam_group', default=_DEFAULTS['steam_group'],
+                   help="STEAM only: netCDF group to read. 'parent', 'strips', "
+                        "'cubes', or an explicit path. Default: 'strips'.")
     p.add_argument('--no_show', action='store_true', default=_DEFAULTS['no_show'],
                    help='Suppress plt.show() (useful in scripts/pipelines)')
     return p.parse_args()
@@ -125,5 +129,6 @@ if __name__ == '__main__':
         variable=args.variable,
         experiment=args.experiment,
         method=args.method,
+        steam_group=args.steam_group,
         show=not args.no_show,
     )

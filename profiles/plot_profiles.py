@@ -25,6 +25,7 @@ _DEFAULTS = dict(
     experiment='steam',
     steam_data_dir=None,
     steam_file_pattern=None,
+    steam_group='strips',
     no_show=False,
 )
 
@@ -39,7 +40,8 @@ STEAM_COLOR = '#e6550d'
 DROPSONDE_COLOR = '#636363'
 
 
-def _load_cloud_fraction(dataset, experiment=None, steam_data_dir=None, steam_file_pattern=None):
+def _load_cloud_fraction(dataset, experiment=None, steam_data_dir=None,
+                          steam_file_pattern=None, steam_group=None):
     """Load cloud condensate in g/kg for a dataset. Returns (z, qtotal) with 4D shape."""
     if dataset == 'SAM_TWPICE':
         from utils.sam_twpice_loader import load_sam_twpice_variable_interpolated
@@ -64,17 +66,20 @@ def _load_cloud_fraction(dataset, experiment=None, steam_data_dir=None, steam_fi
         from utils.steam_loader import load_steam_variable_interpolated
         z, qc, _ = load_steam_variable_interpolated('qc',
                                                      data_dir=steam_data_dir,
-                                                     file_pattern=steam_file_pattern)
+                                                     file_pattern=steam_file_pattern,
+                                                     group=steam_group)
         _, qi, _ = load_steam_variable_interpolated('qi',
                                                     data_dir=steam_data_dir,
-                                                    file_pattern=steam_file_pattern)
+                                                    file_pattern=steam_file_pattern,
+                                                    group=steam_group)
         qtotal = qc + qi
     else:
         raise ValueError(f"Cloud fraction not supported for dataset: {dataset}")
     return z, qtotal
 
 
-def _load_profiles(dataset, variable, experiment=None, steam_data_dir=None, steam_file_pattern=None):
+def _load_profiles(dataset, variable, experiment=None, steam_data_dir=None,
+                    steam_file_pattern=None, steam_group=None):
     """Load data and return (z, profiles_2d) in display units.
 
     profiles_2d has shape (n_profiles, nz).
@@ -92,7 +97,8 @@ def _load_profiles(dataset, variable, experiment=None, steam_data_dir=None, stea
         from utils.steam_loader import load_steam_variable_interpolated
         z, data, _ = load_steam_variable_interpolated(variable,
                                                        data_dir=steam_data_dir,
-                                                       file_pattern=steam_file_pattern)
+                                                       file_pattern=steam_file_pattern,
+                                                       group=steam_group)
     elif dataset == 'dropsonde':
         from utils.dropsonde_loader import load_dropsonde_variable_interpolated
         z, data, _ = load_dropsonde_variable_interpolated(variable)
@@ -122,18 +128,21 @@ def _dataset_label(dataset, experiment=None):
 
 
 def plot_per_dataset(dataset, variable, experiment=None,
-                     steam_data_dir=None, steam_file_pattern=None, show=True):
+                     steam_data_dir=None, steam_file_pattern=None,
+                     steam_group=None, show=True):
     """Plot individual profiles (thin) + mean (thick) for one dataset/variable."""
     if variable == 'cloud_fraction':
         _plot_cloud_fraction_per_dataset(dataset, experiment,
                                          steam_data_dir=steam_data_dir,
                                          steam_file_pattern=steam_file_pattern,
+                                         steam_group=steam_group,
                                          show=show)
         return
 
     z, profiles = _load_profiles(dataset, variable, experiment,
                                   steam_data_dir=steam_data_dir,
-                                  steam_file_pattern=steam_file_pattern)
+                                  steam_file_pattern=steam_file_pattern,
+                                  steam_group=steam_group)
     unit = get_unit_label(variable)
     z_km = z / 1e3
     mean_prof = np.nanmean(profiles, axis=0)
@@ -162,11 +171,13 @@ def plot_per_dataset(dataset, variable, experiment=None,
 
 
 def _plot_cloud_fraction_per_dataset(dataset, experiment=None,
-                                     steam_data_dir=None, steam_file_pattern=None, show=True):
+                                     steam_data_dir=None, steam_file_pattern=None,
+                                     steam_group=None, show=True):
     """Cloud fraction profiles for one dataset at multiple thresholds."""
     z, qtotal = _load_cloud_fraction(dataset, experiment,
                                      steam_data_dir=steam_data_dir,
-                                     steam_file_pattern=steam_file_pattern)
+                                     steam_file_pattern=steam_file_pattern,
+                                     steam_group=steam_group)
     z_km = z / 1e3
     color = _dataset_color(dataset)
     label = _dataset_label(dataset, experiment)
@@ -191,14 +202,16 @@ def _plot_cloud_fraction_per_dataset(dataset, experiment=None,
 
 
 def plot_cross_dataset(variable, datasets=('SAM_TWPICE', 'STEAM', 'dropsonde'),
-                       steam_data_dir=None, steam_file_pattern=None, show=True):
+                       steam_data_dir=None, steam_file_pattern=None,
+                       steam_group=None, show=True):
     """Plot mean profiles across datasets. Accepts any variable name.
 
     Only datasets that have a mapping for the variable are plotted.
     """
     if variable == 'cloud_fraction':
         _plot_cloud_fraction_cross(steam_data_dir=steam_data_dir,
-                                   steam_file_pattern=steam_file_pattern, show=show)
+                                   steam_file_pattern=steam_file_pattern,
+                                   steam_group=steam_group, show=show)
         return
 
     sam_var = resolve_to_sam(variable)
@@ -218,7 +231,8 @@ def plot_cross_dataset(variable, datasets=('SAM_TWPICE', 'STEAM', 'dropsonde'),
     for ds, var in dataset_vars.items():
         z, profiles = _load_profiles(ds, var,
                                      steam_data_dir=steam_data_dir,
-                                     steam_file_pattern=steam_file_pattern)
+                                     steam_file_pattern=steam_file_pattern,
+                                     steam_group=steam_group)
         mean_prof = np.nanmean(profiles, axis=0)
         ax.plot(mean_prof, z / 1e3, color=_dataset_color(ds), lw=2, label=f'{ds} ({var})')
 
@@ -234,12 +248,14 @@ def plot_cross_dataset(variable, datasets=('SAM_TWPICE', 'STEAM', 'dropsonde'),
         plt.show()
 
 
-def _plot_cloud_fraction_cross(steam_data_dir=None, steam_file_pattern=None, show=True):
+def _plot_cloud_fraction_cross(steam_data_dir=None, steam_file_pattern=None,
+                                steam_group=None, show=True):
     """Cloud fraction: SAM_TWPICE vs STEAM at multiple thresholds."""
     z_sam, qt_sam = _load_cloud_fraction('SAM_TWPICE')
     z_steam, qt_steam = _load_cloud_fraction('STEAM',
                                              steam_data_dir=steam_data_dir,
-                                             steam_file_pattern=steam_file_pattern)
+                                             steam_file_pattern=steam_file_pattern,
+                                             steam_group=steam_group)
 
     fig, ax = plt.subplots(figsize=(5, 7))
     for thresh in CF_THRESHOLDS:
@@ -276,6 +292,12 @@ def _parse_args():
                    help='Directory for STEAM output files (overrides config default)')
     p.add_argument('--steam_file_pattern', default=_DEFAULTS['steam_file_pattern'],
                    help='Glob pattern for STEAM files, e.g. "steam_SAM_small_seed_*.nc"')
+    p.add_argument('--steam_group', default=_DEFAULTS['steam_group'],
+                   help="netCDF group(s) to read from nested STEAM files. "
+                        "Shortcuts: 'parent' (root domain), 'strips' (both "
+                        "strip_center + strip_edge, averaged together), 'cubes' "
+                        "(both cube_center + cube_edge). Also accepts an explicit "
+                        "path like 'refinements/strip_center'. Default: 'strips'.")
     p.add_argument('--no_show', action='store_true', default=_DEFAULTS['no_show'],
                    help='Suppress plt.show() (useful in scripts/pipelines)')
     return p.parse_args()
@@ -286,6 +308,7 @@ if __name__ == '__main__':
     show = not args.no_show
     kwargs = dict(steam_data_dir=args.steam_data_dir,
                   steam_file_pattern=args.steam_file_pattern,
+                  steam_group=args.steam_group,
                   show=show)
     if args.plot_type == 'per_dataset':
         plot_per_dataset(args.dataset, args.variable, args.experiment, **kwargs)

@@ -34,6 +34,7 @@ _DEFAULTS = dict(
     orders=[1],
     fit_min=4,
     fit_max=64,
+    steam_group='strips',
     no_show=False,
 )
 
@@ -60,10 +61,10 @@ _FIT_COLOR      = '#e63946'   # red dotted for power-law fits
 
 # ── Data loading ──────────────────────────────────────────────────────
 
-def _load_model(dataset, variable, experiment=None):
+def _load_model(dataset, variable, experiment=None, steam_group=None):
     if dataset == 'STEAM':
         from utils.steam_loader import load_steam_variable_interpolated
-        return load_steam_variable_interpolated(variable)
+        return load_steam_variable_interpolated(variable, group=steam_group)
     elif dataset == 'CM1':
         from utils.cm1_loader import load_cm1_variable_interpolated
         return load_cm1_variable_interpolated(variable, experiment=experiment)
@@ -127,14 +128,14 @@ def _plot_fit(ax, lags, slope, intercept, spacing_m, fit_min, fit_max, color=_FI
 # ── Per-panel routine ─────────────────────────────────────────────────
 
 def _panel(ax, dataset, experiment, variable, method, alt_min, alt_max,
-           orders, fit_min, fit_max,
+           orders, fit_min, fit_max, steam_group=None,
            ds_lags_v=None, ds_vals_v=None, ds_spacing_v=None,
            ap_lags_h=None, ap_vals_h=None, ap_spacing_h=None):
     """Draw one panel: model vertical+horizontal SFs + obs overlays."""
 
     color = _DATASET_COLORS[dataset]
 
-    z, data, dx = _load_model(dataset, variable, experiment)
+    z, data, dx = _load_model(dataset, variable, experiment, steam_group=steam_group)
     print(f"  {dataset}: loaded shape {data.shape}")
 
     # ── Altitude subset ──────────────────────────────────────────────
@@ -164,7 +165,7 @@ def _panel(ax, dataset, experiment, variable, method, alt_min, alt_max,
     if slope_v is not None:
         _plot_fit(ax, lags_v, slope_v, int_v, vert_spacing, fit_min, fit_max)
 
-    # Horizontal SF (axis=1 for x)
+    # Horizontal SF along x (axis=1); y is the strided replication axis.
     if dx is not None:
         lags_h, vals_h = func(data, axis=1, order=orders[0])
         if not np.any(np.isfinite(vals_h) & (vals_h > 0)):
@@ -214,7 +215,8 @@ def _panel(ax, dataset, experiment, variable, method, alt_min, alt_max,
 
 def compare_structure_functions(variable='qv', method='haar',
                                 alt_min=None, alt_max=None,
-                                orders=None, fit_min=4, fit_max=64, show=True):
+                                orders=None, fit_min=4, fit_max=64,
+                                steam_group='strips', show=True):
     if orders is None:
         orders = [1]
     if alt_min is None:
@@ -268,7 +270,7 @@ def compare_structure_functions(variable='qv', method='haar',
         ax = axes[row][col]
         print(f"\nPanel ({row},{col}): {dataset} {experiment or ''}")
         _panel(ax, dataset, experiment, variable, method, alt_min, alt_max,
-               orders, fit_min, fit_max,
+               orders, fit_min, fit_max, steam_group=steam_group,
                ds_lags_v=ds_lags_v, ds_vals_v=ds_vals_v, ds_spacing_v=ds_spacing_v,
                ap_lags_h=ap_lags_h, ap_vals_h=ap_vals_h, ap_spacing_h=ap_spacing_h)
 
@@ -305,6 +307,9 @@ def _parse_args():
     p.add_argument('--orders',   type=float, nargs='+', default=_DEFAULTS['orders'])
     p.add_argument('--fit_min',  type=int,   default=_DEFAULTS['fit_min'])
     p.add_argument('--fit_max',  type=int,   default=_DEFAULTS['fit_max'])
+    p.add_argument('--steam_group', default=_DEFAULTS['steam_group'],
+                   help="STEAM only: netCDF group to read. 'parent', 'strips', "
+                        "'cubes', or an explicit path. Default: 'strips'.")
     p.add_argument('--no_show',  action='store_true', default=_DEFAULTS['no_show'])
     return p.parse_args()
 
@@ -319,5 +324,6 @@ if __name__ == '__main__':
         orders=args.orders,
         fit_min=args.fit_min,
         fit_max=args.fit_max,
+        steam_group=args.steam_group,
         show=not args.no_show,
     )

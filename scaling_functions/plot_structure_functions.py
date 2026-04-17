@@ -17,13 +17,14 @@ FIGURES_DIR = Path(__file__).resolve().parent.parent / 'Figures'
 _DEFAULTS = dict(
     dataset='STEAM',
     experiment='RCE_large300',
-    variable='qt',
-    method='haar',
-    alt_min=100,
-    alt_max=6000,
+    variable='h',
+    method='structure_function',
+    alt_min=4000,
+    alt_max=5000,
     orders=[1],
     fit_min=4,
     fit_max=64,
+    steam_group='strips',
     no_show=False,
 )
 
@@ -31,7 +32,7 @@ _DEFAULTS = dict(
 _ORDER_COLORS = ['#2171b5', '#6a51a3', '#238b45', '#e6550d', '#cb181d', '#636363']
 
 
-def _load_data(dataset, variable, experiment=None):
+def _load_data(dataset, variable, experiment=None, steam_group=None):
     if dataset == 'SAM_TWPICE':
         from utils.sam_twpice_loader import load_sam_twpice_variable_interpolated
         return load_sam_twpice_variable_interpolated(variable)
@@ -43,7 +44,7 @@ def _load_data(dataset, variable, experiment=None):
         return load_cm1_variable_interpolated(variable, experiment=experiment)
     elif dataset == 'STEAM':
         from utils.steam_loader import load_steam_variable_interpolated
-        return load_steam_variable_interpolated(variable)
+        return load_steam_variable_interpolated(variable, group=steam_group)
     elif dataset == 'dropsonde':
         from utils.dropsonde_loader import load_dropsonde_variable_interpolated
         return load_dropsonde_variable_interpolated(variable)
@@ -53,7 +54,7 @@ def _load_data(dataset, variable, experiment=None):
 
 def plot_structure_functions(dataset, variable, experiment=None, method='haar',
                               alt_min=None, alt_max=None, orders=None,
-                              fit_min=4, fit_max=64, show=True):
+                              fit_min=4, fit_max=64, steam_group=None, show=True):
     """Plot Haar/structure-function scaling for both x and z directions on one plot."""
     if orders is None:
         orders = [1]
@@ -61,7 +62,7 @@ def plot_structure_functions(dataset, variable, experiment=None, method='haar',
     from scaleinvariance import structure_function_analysis, haar_fluctuation_analysis
     from config import get_unit_label
 
-    z, data, dx = _load_data(dataset, variable, experiment)
+    z, data, dx = _load_data(dataset, variable, experiment, steam_group=steam_group)
     unit = get_unit_label(variable)
     print(f"Loaded {dataset} {variable}, shape: {data.shape}")
 
@@ -77,7 +78,9 @@ def plot_structure_functions(dataset, variable, experiment=None, method='haar',
     vert_spacing = np.median(np.diff(z))
 
     # ── Directions to analyse ──
-    # z always; x only when spacing is available
+    # z always; horizontal only when spacing is available.
+    # Horizontal SF is computed along x (axis=1); y (axis=2) is the strided
+    # replication axis. Works for parent, strips (x=long, y=narrow), and cubes.
     # linestyle: solid for z, dashed for x; fit is always dotted
     directions = [('z', -1, vert_spacing, '-')]
     if dx is not None:
@@ -167,6 +170,9 @@ def _parse_args():
                    help='Minimum lag for power-law fit')
     p.add_argument('--fit_max', type=int, default=_DEFAULTS['fit_max'],
                    help='Maximum lag for power-law fit')
+    p.add_argument('--steam_group', default=_DEFAULTS['steam_group'],
+                   help="STEAM only: netCDF group to read. 'parent', 'strips', "
+                        "'cubes', or an explicit path. Default: 'strips'.")
     p.add_argument('--no_show', action='store_true', default=_DEFAULTS['no_show'],
                    help='Suppress plt.show() (useful in scripts/pipelines)')
     return p.parse_args()
@@ -184,5 +190,6 @@ if __name__ == '__main__':
         orders=args.orders,
         fit_min=args.fit_min,
         fit_max=args.fit_max,
+        steam_group=args.steam_group,
         show=not args.no_show,
     )
