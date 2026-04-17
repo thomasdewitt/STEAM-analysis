@@ -8,6 +8,7 @@ from config import (VARIABLE_MAP_SAM_TO_STEAM, VARIABLE_MAP_SAM_TO_DROPSONDE,
                     get_unit_label, get_unit_factor, resolve_variable_pair, resolve_to_sam)
 
 FIGURES_DIR = Path(__file__).resolve().parent.parent / 'Figures'
+FIGURES_DIR.mkdir(exist_ok=True)
 
 # ── Defaults (also used when called with no args) ──
 # SAM_TWPICE:              QV, QT, QC, QI, MSE, TABS, U, V, W, PP
@@ -19,9 +20,9 @@ FIGURES_DIR = Path(__file__).resolve().parent.parent / 'Figures'
 # special:                 cloud_fraction
 _DEFAULTS = dict(
     plot_type='per_dataset',
-    dataset='dropsonde',
-    variable='q',
-    experiment='RCE_small_les300',
+    dataset='STEAM',
+    variable='cloud_fraction',
+    experiment='steam',
     steam_data_dir=None,
     steam_file_pattern=None,
     no_show=False,

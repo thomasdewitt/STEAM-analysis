@@ -2,12 +2,12 @@
 from pathlib import Path
 
 # SAM TWPICE configuration
-SAM_TWPICE_DATA_DIR = '/Volumes/BLUE/TWPICE'
+SAM_TWPICE_DATA_DIR = '/run/media/thomas/BLUE/TWPICE'
 SAM_TWPICE_TIMESTEPS = ['0000000150', '0000001800', '0000003450']
 SAM_TWPICE_VARIABLES = ['QV', 'QT', 'QC', 'QI', 'MSE', 'TABS', 'U', 'V', 'W', 'PP']
 
 # RCEMIP shared data directory
-RCEMIP_DATA_DIR = '/Volumes/BLUE/RCEMIP'
+RCEMIP_DATA_DIR = '/run/media/thomas/BLUE/RCEMIP'
 
 # SAM RCEMIP (SAM_CRM) configuration
 SAM_RCEMIP_LARGE_TIMESTEPS = ['0000660600', '0000680400', '0000700200', '0000720000']
@@ -25,7 +25,7 @@ CM1_VARIABLES = ['hus', 'ta', 'ua', 'va', 'wa', 'pa', 'clw', 'cli', 'plw', 'pli'
 
 # STEAM configuration
 STEAM_DATA_DIR = str(Path(__file__).resolve().parent / 'STEAM' / 'data')
-STEAM_FILE_PATTERN = 'steam_*.nc'
+STEAM_FILE_PATTERN = 'nested_refine_seed*.nc'
 STEAM_3D_VARIABLES = ['h', 'qt', 'T', 'qv', 'qc', 'qi', 'p']
 
 # Dropsonde configuration
