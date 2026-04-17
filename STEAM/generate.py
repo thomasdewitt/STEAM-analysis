@@ -2,8 +2,9 @@
 
 Hierarchy:
     parent (nx² domain, full height)
-    └── strips (2 positions: center, edge)      — narrow in x, full in y
-        └── cube (1 per strip, centered)        — narrow in x and y, optional z slab
+    └── strips (2 positions: center, edge)      — narrow in y, full in x
+        └── cube (1 per strip)                  — narrow in x and y, optional z slab;
+                                                  y centered, x chosen by cloud-fraction scan
 
 Prints grid-size / memory estimates per level up front, then runs the
 full tree. Tracks wall-clock runtime and peak RSS. Renders glimpses of
@@ -34,8 +35,8 @@ from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
-BASE_SEED        = 30
-NSEEDS           = 3
+BASE_SEED        = 23
+NSEEDS           = 7
 
 # Parent: domain size and outer_scale are fixed; change NX/NY to sweep resolution.
 NX, NY           = 1024, 1024
@@ -58,16 +59,17 @@ SPHEROSCALE_TOP   = 1.0                  # m  (if 'linear', at z = DOMAIN_HEIGHT
 ANISOTROPY = 'piecewise_isotropic_below_spheroscale'
 
 # Refinement levels. Each level carves a subdomain of its parent.
-# narrow_cells: requested cells in the narrow axis of the parent grid
+# Narrow axis is y, long axis is x.
+# narrow_cells: requested cells in the narrow (y) axis of the parent grid
 #               (auto-snapped to a valid integer-tile count).
-# long_cells:   cells in the long axis; None means the full parent extent.
-# refine:       refinement factor (output_nx/cells in the narrow axis).
-# positions:    sequence of narrow-axis positions — 'center' or 'edge'.
+# long_cells:   cells in the long (x) axis; None means the full parent extent.
+# refine:       refinement factor (applies to both axes).
+# positions:    sequence of narrow-axis (y) positions — 'center' or 'edge'.
 STRIP = dict(narrow_cells=2, long_cells=None, refine=16, n_classes=6,
              positions=('center', 'edge'), z_min=None, z_max=None)
-# CUBE is always centered in both axes of its parent strip.
-CUBE  = dict(narrow_cells=4, long_cells=4,    refine=256, n_classes=8,
-             z_min=1_000.0, z_max=2_000.0)
+# CUBE: y centered in the parent strip; x chosen by cloud-fraction scan.
+CUBE  = dict(narrow_cells=12, long_cells=12,    refine=128, n_classes=8,
+             z_min=1_000.0, z_max=2000.0)
 
 # Paths
 REPO_ROOT  = Path(__file__).resolve().parent.parent
@@ -128,9 +130,10 @@ def print_estimates(ls_profile: np.ndarray) -> None:
           f'[{fmt_mem(NX * NY, nz)}]')
 
     # Walk the tree symbolically. Each level inherits outer_scale = parent_finest_k.
+    # Narrow axis is y; long axis is x.
     p_dx, p_fk = dx, finest_k
     for label, cfg, parent_narrow, parent_long in [
-        ('Strip',   STRIP, NX, NY),
+        ('Strip',   STRIP, NY, NX),
         ('Cube',    CUBE,  None, None),   # parent is the strip, computed below
     ]:
         if parent_narrow is None:
@@ -159,7 +162,8 @@ def print_estimates(ls_profile: np.ndarray) -> None:
         nyq_warn = '' if new_finest_k >= 2 * new_dx else \
                    f'  WARNING: finest_k {new_finest_k:.2f} < 2·dx {2*new_dx:.2f}'
 
-        print(f'{label:<10} {narrow_grid}×{long_grid} × nz~{nz_i}   '
+        # Print as nx × ny (long × narrow, since narrow = y).
+        print(f'{label:<10} {long_grid}×{narrow_grid} × nz~{nz_i}   '
               f'dx={new_dx:.2f}m  L={new_outer/1000:.2f}km  '
               f'finest_k={new_finest_k:.2f}m  '
               f'[{fmt_mem(narrow_grid * long_grid, nz_i)}]'
@@ -225,30 +229,79 @@ def position_slice(axis_len: int, cells: int, position: str) -> tuple[int, int]:
     return start, start + cells
 
 
+def find_best_cube_x_start(nc_path: Path, parent_group: str, cfg: dict,
+                           z_target_m: float, threshold: float = 0.0) -> int:
+    """Scan along the long (x) axis of parent_group; return the x_start
+    for a cube-sized window whose cloud fraction (qc > threshold) at the
+    vertical level closest to z_target_m is nearest 0.5.
+    y is centered within the parent strip.
+    """
+    parent_nx, parent_ny, parent_dx, parent_fk = read_group_info(nc_path, parent_group)
+    cells_y = snap_cells(cfg['narrow_cells'], parent_dx, parent_fk, parent_ny)
+    cells_x = snap_cells(cfg['long_cells'],   parent_dx, parent_fk, parent_nx)
+    y_start = (parent_ny - cells_y) // 2
+
+    with netCDF4.Dataset(nc_path, 'r') as ds:
+        grp = ds if parent_group == '/' else ds[parent_group]
+        z = grp.variables['z'][:]
+        z_idx = int(np.argmin(np.abs(z - z_target_m)))
+        z_used = float(z[z_idx])
+        qc_slab = grp.variables['qc'][:, y_start:y_start + cells_y, z_idx]
+
+    mask = np.asarray(qc_slab > threshold, dtype=np.int64)      # (parent_nx, cells_y)
+    row_sum = mask.sum(axis=1)                                   # (parent_nx,)
+    csum = np.concatenate(([0], np.cumsum(row_sum)))
+    win_sums = csum[cells_x:] - csum[:-cells_x]                  # (parent_nx - cells_x + 1,)
+    cf = win_sums / float(cells_x * cells_y)
+    best_x = int(np.argmin(np.abs(cf - 0.5)))
+
+    x_center_cell = best_x + cells_x / 2
+    y_center_cell = y_start + cells_y / 2
+    x_center_m = x_center_cell * parent_dx
+    y_center_m = y_center_cell * parent_dx
+    centered_cf = float(cf[(parent_nx - cells_x) // 2])
+    print(f"  cube scan in '{parent_group}' @ z={z_used:.1f}m "
+          f"(target {z_target_m:.0f}m, threshold qc>{threshold:g}):")
+    print(f"    center @ (x,y) cell=({x_center_cell:.1f}, {y_center_cell:.1f}) "
+          f"= ({x_center_m/1e3:.2f}, {y_center_m/1e3:.3f}) km in strip   "
+          f"x_start={best_x}")
+    print(f"    projected cf={cf[best_x]:.3f}  "
+          f"(scan range {cf.min():.3f}…{cf.max():.3f}, "
+          f"centered-placement cf={centered_cf:.3f})")
+    return best_x
+
+
 def run_refine(nc_path: Path, parent_group: str, cfg: dict,
                narrow_axis_positions: tuple[str, str | None],
                output_group: str, level_idx: int,
-               seed: int) -> tuple[str, int, int]:
+               seed: int,
+               x_start_override: int | None = None) -> tuple[str, int, int]:
     """Carve a subdomain out of parent_group and run refine().
 
-    narrow_axis_positions: (x_position, y_position_or_None).
-      If y_position is None, the region spans the full parent in y.
+    narrow_axis_positions: (y_position, x_position_or_None).
+      If x_position is None, the region spans the full parent in x.
+    x_start_override: if given (and long_cells is not None), use this x
+      offset in parent cells instead of the narrow_axis_positions[1] rule.
     """
     parent_nx, parent_ny, parent_dx, parent_fk = read_group_info(nc_path, parent_group)
 
-    # Narrow (x) cells
-    cells_x_req = cfg['narrow_cells']
-    cells_x = snap_cells(cells_x_req, parent_dx, parent_fk, parent_nx)
-    x_start, x_stop = position_slice(parent_nx, cells_x, narrow_axis_positions[0])
+    # Narrow (y) cells
+    cells_y_req = cfg['narrow_cells']
+    cells_y = snap_cells(cells_y_req, parent_dx, parent_fk, parent_ny)
+    y_start, y_stop = position_slice(parent_ny, cells_y, narrow_axis_positions[0])
 
-    # Long (y) cells: full extent if long_cells is None, else narrow in y too
+    # Long (x) cells: full extent if long_cells is None, else narrow in x too
     if cfg['long_cells'] is None:
-        y_start, y_stop = 0, parent_ny
+        x_start, x_stop = 0, parent_nx
     else:
-        cells_y_req = cfg['long_cells']
-        cells_y = snap_cells(cells_y_req, parent_dx, parent_fk, parent_ny)
-        y_pos = narrow_axis_positions[1] or 'center'
-        y_start, y_stop = position_slice(parent_ny, cells_y, y_pos)
+        cells_x_req = cfg['long_cells']
+        cells_x = snap_cells(cells_x_req, parent_dx, parent_fk, parent_nx)
+        if x_start_override is not None:
+            x_start = max(0, min(x_start_override, parent_nx - cells_x))
+            x_stop  = x_start + cells_x
+        else:
+            x_pos = narrow_axis_positions[1] or 'center'
+            x_start, x_stop = position_slice(parent_nx, cells_x, x_pos)
 
     new_dx = parent_dx / cfg['refine']
     print(f"  refine parent='{parent_group}' → '{output_group}'  "
@@ -324,8 +377,11 @@ def run_one_seed(seed: int, h_profile: np.ndarray, qt_profile: np.ndarray,
 
         cube_group = f'refinements/cube_{strip_pos}'
         print(f"\n=== Cube [{strip_pos}] ===")
+        z_target = 0.5 * (CUBE['z_min'] + CUBE['z_max'])
+        x_start = find_best_cube_x_start(nc_path, strip_group, CUBE, z_target)
         run_refine(nc_path, strip_group, CUBE, ('center', 'center'),
-                   cube_group, level_idx=2, seed=seed)
+                   cube_group, level_idx=2, seed=seed,
+                   x_start_override=x_start)
         cube_groups.append(cube_group)
 
     print(f"\n=== Rendering glimpses to {RENDER_DIR} ===")
