@@ -35,28 +35,28 @@ from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
-BASE_SEED        = 23
-NSEEDS           = 7
+BASE_SEED        = 1
+NSEEDS           = 1
 
 # Parent: domain size and outer_scale are fixed; change NX/NY to sweep resolution.
 NX, NY           = 1024, 1024
-DOMAIN_WIDTH     = 4_000_000.0          # m  (constant, 17 000 km)
+DOMAIN_WIDTH     = 4_000_000.0          # m 
 DOMAIN_HEIGHT    = 20_000.0              # m
-OUTER_SCALE      = DOMAIN_WIDTH / 2      # m  (half domain width)
+OUTER_SCALE      = DOMAIN_WIDTH / 2      # m 
 N_SIZE_CLASSES   = 10
-SPARSITY_FACTORS = (1, 1, 1)
+SPARSITY_FACTORS = (2,2,2)
 SURFACE_PRESSURE = 101_325.0
 H_MAX, H_MIN     = 400 * 1004, 250 * 1004
 QT_MIN, QT_MAX   = 0.0, 30 / 1000
 
 # Spheroscale: 'constant' (ls = SPHEROSCALE_CONST) or 'linear' (ramps with z).
-SPHEROSCALE_MODE  = 'linear'
+SPHEROSCALE_MODE  = 'constant'
 SPHEROSCALE_CONST = 10.0                 # m  (if 'constant')
 SPHEROSCALE_SFC   = 100.0                # m  (if 'linear', at z = 0)
 SPHEROSCALE_TOP   = 1.0                  # m  (if 'linear', at z = DOMAIN_HEIGHT)
 
 # Grid anisotropy: 'canonical' | 'piecewise_isotropic_below_spheroscale'
-ANISOTROPY = 'piecewise_isotropic_below_spheroscale'
+ANISOTROPY = 'canonical'
 
 # Refinement levels. Each level carves a subdomain of its parent.
 # Narrow axis is y, long axis is x.
@@ -70,6 +70,11 @@ STRIP = dict(narrow_cells=2, long_cells=None, refine=16, n_classes=6,
 # CUBE: y centered in the parent strip; x chosen by cloud-fraction scan.
 CUBE  = dict(narrow_cells=12, long_cells=12,    refine=128, n_classes=8,
              z_min=1_000.0, z_max=2000.0)
+RUN_STRIPS = False           # set False to generate only the parent (cubes also disabled)
+RUN_CUBES  = False          # set False to stop after strips (skips scan + cube refine)
+
+if RUN_CUBES and not RUN_STRIPS:
+    raise ValueError("RUN_CUBES=True requires RUN_STRIPS=True (cubes are carved from strips).")
 
 # Paths
 REPO_ROOT  = Path(__file__).resolve().parent.parent
@@ -132,10 +137,12 @@ def print_estimates(ls_profile: np.ndarray) -> None:
     # Walk the tree symbolically. Each level inherits outer_scale = parent_finest_k.
     # Narrow axis is y; long axis is x.
     p_dx, p_fk = dx, finest_k
-    for label, cfg, parent_narrow, parent_long in [
-        ('Strip',   STRIP, NY, NX),
-        ('Cube',    CUBE,  None, None),   # parent is the strip, computed below
-    ]:
+    levels = []
+    if RUN_STRIPS:
+        levels.append(('Strip', STRIP, NY, NX))
+    if RUN_CUBES:
+        levels.append(('Cube', CUBE, None, None))   # parent is the strip, computed below
+    for label, cfg, parent_narrow, parent_long in levels:
         if parent_narrow is None:
             parent_narrow = narrow_grid_prev
             parent_long   = long_grid_prev
@@ -369,20 +376,22 @@ def run_one_seed(seed: int, h_profile: np.ndarray, qt_profile: np.ndarray,
     compute_diagnostics(nc_path)
 
     cube_groups: list[str] = []
-    for strip_pos in STRIP['positions']:
-        strip_group = f'refinements/strip_{strip_pos}'
-        print(f"\n=== Strip [{strip_pos}] ===")
-        run_refine(nc_path, '/', STRIP, (strip_pos, None),
-                   strip_group, level_idx=1, seed=seed)
+    if RUN_STRIPS:
+        for strip_pos in STRIP['positions']:
+            strip_group = f'refinements/strip_{strip_pos}'
+            print(f"\n=== Strip [{strip_pos}] ===")
+            run_refine(nc_path, '/', STRIP, (strip_pos, None),
+                       strip_group, level_idx=1, seed=seed)
 
-        cube_group = f'refinements/cube_{strip_pos}'
-        print(f"\n=== Cube [{strip_pos}] ===")
-        z_target = 0.5 * (CUBE['z_min'] + CUBE['z_max'])
-        x_start = find_best_cube_x_start(nc_path, strip_group, CUBE, z_target)
-        run_refine(nc_path, strip_group, CUBE, ('center', 'center'),
-                   cube_group, level_idx=2, seed=seed,
-                   x_start_override=x_start)
-        cube_groups.append(cube_group)
+            if RUN_CUBES:
+                cube_group = f'refinements/cube_{strip_pos}'
+                print(f"\n=== Cube [{strip_pos}] ===")
+                z_target = 0.5 * (CUBE['z_min'] + CUBE['z_max'])
+                x_start = find_best_cube_x_start(nc_path, strip_group, CUBE, z_target)
+                run_refine(nc_path, strip_group, CUBE, ('center', 'center'),
+                           cube_group, level_idx=2, seed=seed,
+                           x_start_override=x_start)
+                cube_groups.append(cube_group)
 
     print(f"\n=== Rendering glimpses to {RENDER_DIR} ===")
     run_glimpse(nc_path, group=None, suffix=f'parent_seed{seed:03d}')
