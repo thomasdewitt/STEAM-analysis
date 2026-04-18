@@ -36,27 +36,27 @@ from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
 BASE_SEED        = 1
-NSEEDS           = 1
+NSEEDS           = 10
 
 # Parent: domain size and outer_scale are fixed; change NX/NY to sweep resolution.
 NX, NY           = 1024, 1024
-DOMAIN_WIDTH     = 4_000_000.0          # m 
+DOMAIN_WIDTH     = 4_000_000.0          # m
 DOMAIN_HEIGHT    = 20_000.0              # m
-OUTER_SCALE      = DOMAIN_WIDTH / 2      # m 
-N_SIZE_CLASSES   = 10
-SPARSITY_FACTORS = (2,2,2)
+OUTER_SCALE      = DOMAIN_WIDTH / 2      # m
+N_SCALE_CLASSES_PER_DYAD = 1             # 1 → dyadic (gap=2); 2 → gap=√2; etc.
+SPARSITY_FACTORS = (1,1,1)
 SURFACE_PRESSURE = 101_325.0
 H_MAX, H_MIN     = 400 * 1004, 250 * 1004
 QT_MIN, QT_MAX   = 0.0, 30 / 1000
 
 # Spheroscale: 'constant' (ls = SPHEROSCALE_CONST) or 'linear' (ramps with z).
-SPHEROSCALE_MODE  = 'constant'
+SPHEROSCALE_MODE  = 'linear'
 SPHEROSCALE_CONST = 10.0                 # m  (if 'constant')
-SPHEROSCALE_SFC   = 100.0                # m  (if 'linear', at z = 0)
+SPHEROSCALE_SFC   = 30.0                # m  (if 'linear', at z = 0)
 SPHEROSCALE_TOP   = 1.0                  # m  (if 'linear', at z = DOMAIN_HEIGHT)
 
 # Grid anisotropy: 'canonical' | 'piecewise_isotropic_below_spheroscale'
-ANISOTROPY = 'canonical'
+ANISOTROPY = 'piecewise_isotropic_below_spheroscale'
 
 # Refinement levels. Each level carves a subdomain of its parent.
 # Narrow axis is y, long axis is x.
@@ -65,13 +65,14 @@ ANISOTROPY = 'canonical'
 # long_cells:   cells in the long (x) axis; None means the full parent extent.
 # refine:       refinement factor (applies to both axes).
 # positions:    sequence of narrow-axis (y) positions — 'center' or 'edge'.
-STRIP = dict(narrow_cells=2, long_cells=None, refine=16, n_classes=6,
+STRIP = dict(narrow_cells=2, long_cells=None, refine=16,
              positions=('center', 'edge'), z_min=None, z_max=None)
 # CUBE: y centered in the parent strip; x chosen by cloud-fraction scan.
-CUBE  = dict(narrow_cells=12, long_cells=12,    refine=128, n_classes=8,
-             z_min=1_000.0, z_max=2000.0)
-RUN_STRIPS = False           # set False to generate only the parent (cubes also disabled)
-RUN_CUBES  = False          # set False to stop after strips (skips scan + cube refine)
+CUBE  = dict(narrow_cells=20, long_cells=20,    refine=64,
+             z_min=500.0, z_max=2000.0)
+RUN_STRIPS = True
+RUN_CUBES  = True
+TARGET_CF_CUBES = 0.2
 
 if RUN_CUBES and not RUN_STRIPS:
     raise ValueError("RUN_CUBES=True requires RUN_STRIPS=True (cubes are carved from strips).")
@@ -128,14 +129,18 @@ def fmt_mem(cells: int, nz: int, peak_factor: float = 2.5) -> str:
 def print_estimates(ls_profile: np.ndarray) -> None:
     print('\n=== Grid-size estimates ===')
     dx = DOMAIN_WIDTH / NX
-    finest_k = OUTER_SCALE / 2 ** (N_SIZE_CLASSES - 1)
+    gap = 2.0 ** (1.0 / N_SCALE_CLASSES_PER_DYAD)
+    n_classes = int(round(np.log(OUTER_SCALE / (2 * dx)) / np.log(gap))) + 1
+    finest_k = OUTER_SCALE / gap ** (n_classes - 1)
     nz = estimate_nz(finest_k, ls_profile, 0.0, DOMAIN_HEIGHT)
     print(f'Parent:     {NX}×{NY} × nz~{nz}   dx={dx/1000:.2f}km  '
           f'L={OUTER_SCALE/1000:.0f}km  finest_k={finest_k/1000:.2f}km  '
+          f'gap={gap:.3f}  n_classes={n_classes}  '
           f'[{fmt_mem(NX * NY, nz)}]')
 
-    # Walk the tree symbolically. Each level inherits outer_scale = parent_finest_k.
-    # Narrow axis is y; long axis is x.
+    # Walk the tree symbolically. Each level inherits outer_scale = parent_finest_k
+    # and the parent's gap factor; n_classes is extrapolated until 2*dx is reached,
+    # rounding down to the largest gap^n that still satisfies new_finest_k >= 2*dx.
     p_dx, p_fk = dx, finest_k
     levels = []
     if RUN_STRIPS:
@@ -152,11 +157,19 @@ def print_estimates(ls_profile: np.ndarray) -> None:
         cells_narrow = snap_cells(requested_narrow, p_dx, p_fk, parent_narrow)
         cells_long   = snap_cells(requested_long,   p_dx, p_fk, parent_long)
 
-        new_dx = p_dx / cfg['refine']
+        requested_new_dx = p_dx / cfg['refine']
         new_outer = p_fk
-        new_finest_k = new_outer / 2 ** (cfg['n_classes'] - 1)
-        narrow_grid = int(round(cells_narrow * cfg['refine']))
-        long_grid   = int(round(cells_long   * cfg['refine']))
+        # Number of classes extrapolated from the inherited gap. Class 0 sits
+        # at new_outer/gap, class n at new_outer/gap^(n+1); round down so the
+        # achieved refine factor never overshoots the request.
+        n_classes = int(np.floor(np.log(new_outer / (2 * requested_new_dx))
+                                 / np.log(gap)))
+        n_classes = max(n_classes, 1)
+        new_finest_k = new_outer / gap ** n_classes
+        new_dx = new_finest_k / 2
+        achieved_refine = p_dx / new_dx
+        narrow_grid = int(round(cells_narrow * achieved_refine))
+        long_grid   = int(round(cells_long   * achieved_refine))
 
         z0 = 0.0            if cfg['z_min'] is None else cfg['z_min']
         z1 = DOMAIN_HEIGHT  if cfg['z_max'] is None else cfg['z_max']
@@ -166,15 +179,16 @@ def print_estimates(ls_profile: np.ndarray) -> None:
         if cells_narrow != requested_narrow or cells_long != requested_long:
             snap_note = f'  (cells snap {requested_narrow}→{cells_narrow}, ' \
                         f'{requested_long}→{cells_long})'
-        nyq_warn = '' if new_finest_k >= 2 * new_dx else \
-                   f'  WARNING: finest_k {new_finest_k:.2f} < 2·dx {2*new_dx:.2f}'
+        refine_note = ''
+        if abs(achieved_refine - cfg['refine']) > 1e-6:
+            refine_note = f'  (refine {cfg["refine"]}→{achieved_refine:.2f})'
 
         # Print as nx × ny (long × narrow, since narrow = y).
         print(f'{label:<10} {long_grid}×{narrow_grid} × nz~{nz_i}   '
               f'dx={new_dx:.2f}m  L={new_outer/1000:.2f}km  '
-              f'finest_k={new_finest_k:.2f}m  '
+              f'finest_k={new_finest_k:.2f}m  n_classes={n_classes}  '
               f'[{fmt_mem(narrow_grid * long_grid, nz_i)}]'
-              f'{snap_note}{nyq_warn}')
+              f'{snap_note}{refine_note}')
 
         narrow_grid_prev, long_grid_prev = narrow_grid, long_grid
         p_dx, p_fk = new_dx, new_finest_k
@@ -260,7 +274,7 @@ def find_best_cube_x_start(nc_path: Path, parent_group: str, cfg: dict,
     csum = np.concatenate(([0], np.cumsum(row_sum)))
     win_sums = csum[cells_x:] - csum[:-cells_x]                  # (parent_nx - cells_x + 1,)
     cf = win_sums / float(cells_x * cells_y)
-    best_x = int(np.argmin(np.abs(cf - 0.5)))
+    best_x = int(np.argmin(np.abs(cf - TARGET_CF_CUBES)))
 
     x_center_cell = best_x + cells_x / 2
     y_center_cell = y_start + cells_y / 2
@@ -313,7 +327,7 @@ def run_refine(nc_path: Path, parent_group: str, cfg: dict,
     new_dx = parent_dx / cfg['refine']
     print(f"  refine parent='{parent_group}' → '{output_group}'  "
           f"x[{x_start}:{x_stop}] y[{y_start}:{y_stop}]  "
-          f"new_dx={new_dx:.3f}m  classes={cfg['n_classes']}")
+          f"requested_dx={new_dx:.3f}m  (n_classes picked from parent gap)")
 
     refine(
         nc_path,
@@ -322,7 +336,6 @@ def run_refine(nc_path: Path, parent_group: str, cfg: dict,
         dx=new_dx, dy=new_dx,
         parent_group=parent_group,
         output_group=output_group,
-        n_size_classes=cfg['n_classes'],
         seed=seed + 1000 * level_idx + hash(output_group) % 997,
         z_min=cfg['z_min'], z_max=cfg['z_max'],
         anisotropy=ANISOTROPY,
@@ -370,7 +383,7 @@ def run_one_seed(seed: int, h_profile: np.ndarray, qt_profile: np.ndarray,
         seed=seed,
         h_max=H_MAX, h_min=H_MIN,
         qt_min=QT_MIN, qt_max=QT_MAX,
-        n_size_classes=N_SIZE_CLASSES,
+        n_scale_classes_per_dyad=N_SCALE_CLASSES_PER_DYAD,
         anisotropy=ANISOTROPY,
     )
     compute_diagnostics(nc_path)

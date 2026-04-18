@@ -19,7 +19,7 @@ _DEFAULTS = dict(
     experiment='RCE_large300',
     variable='qt',
     method='haar',
-    steam_group='strips',
+    steam_group='parent',
     no_show=False,
 )
 
@@ -59,9 +59,11 @@ def compare_scaling_4d_vs_profile(dataset, variable, experiment=None,
     mean_profile = np.nanmean(data, axis=(0, 1, 2))
 
     if method == 'haar':
-        from scaleinvariance import haar_fluctuation_analysis
-        lags_4d,   vals_4d   = haar_fluctuation_analysis(data,         axis=3, lags='powers of 1.05', nan_behavior='ignore')
-        lags_prof, vals_prof = haar_fluctuation_analysis(mean_profile,  axis=0, lags='powers of 1.05', nan_behavior='ignore')
+        from scaleinvariance import haar_fluctuation, set_device, set_numerical_precision
+        set_device('cuda')
+        set_numerical_precision('float32')
+        lags_4d,   vals_4d   = haar_fluctuation(data,         axis=3, lags='powers of 1.05', nan_behavior='ignore')
+        lags_prof, vals_prof = haar_fluctuation(mean_profile,  axis=0, lags='powers of 1.05', nan_behavior='ignore')
         ylabel = f'Haar Fluctuation ({unit})'
     elif method == 'structure_function':
         from scaleinvariance import structure_function_analysis
