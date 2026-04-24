@@ -36,14 +36,14 @@ from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
-BASE_SEED        = 1
-NSEEDS           = 1
+BASE_SEED        = 2
+NSEEDS           = 4
 
 # Parent: domain size and outer_scale are fixed; change NX/NY to sweep resolution.
 NX, NY           = 1024, 1024
 DOMAIN_WIDTH     = 4_000_000.0          # m
 DOMAIN_HEIGHT    = 20_000.0              # m
-OUTER_SCALE      = DOMAIN_WIDTH / 6      # m
+OUTER_SCALE      = DOMAIN_WIDTH / 2      # m
 N_SCALE_CLASSES_PER_DYAD = 1             # 1 → dyadic (gap=2); 2 → gap=√2; etc.
 SPARSITY_FACTORS = (1,1,1)
 SURFACE_PRESSURE = 101_325.0
@@ -52,12 +52,12 @@ QT_MIN, QT_MAX   = 0.0, 30 / 1000
 
 # Spheroscale: 'constant' (ls = SPHEROSCALE_CONST) or 'linear' (ramps with z).
 SPHEROSCALE_MODE  = 'constant'
-SPHEROSCALE_CONST = 200.0                 # m  (if 'constant')
+SPHEROSCALE_CONST = 30.0                 # m  (if 'constant')
 SPHEROSCALE_SFC   = 200.0                # m  (if 'linear', at z = 0)
 SPHEROSCALE_TOP   = 1.0                  # m  (if 'linear', at z = DOMAIN_HEIGHT)
 
 # Grid anisotropy: 'canonical' | 'piecewise_isotropic_below_spheroscale'
-ANISOTROPY = 'piecewise_isotropic_below_spheroscale'
+ANISOTROPY = 'canonical'
 
 # Refinement levels. Each level carves a subdomain of its parent.
 # Narrow axis is y, long axis is x.

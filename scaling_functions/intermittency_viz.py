@@ -6,10 +6,12 @@ multifractal.
 
 For each target variable (q_t, MSE):
 
-1. Horizontal profile visualization — thin black lines for
-     (STEAM, FIF, SAM)
-   at 5.5 km, cropped to a common display length, demeaned. Meant to make
-   the contrast in "burstiness" visible at a glance.
+1. Horizontal profile visualization — 5 separate figures per variable,
+   each a 3-row (STEAM / SAM / FIF) stack of thin black lines drawn from
+   an independent realization (different seed/timestep/draw). Axes are
+   stripped entirely (no ticks, no spines, no x-axis). STEAM and FIF are
+   shown as their first 1024 samples stretched to full panel width; SAM
+   is shown as 2048 samples. Each profile is individually demeaned.
 
 2. K(q) intermittency function — empirical points for STEAM and SAM on
    one plot, with their theoretical Lovejoy-Schertzer fits
@@ -41,9 +43,13 @@ FIGURES_DIR.mkdir(exist_ok=True)
 ALT_MIN = 5000.0
 ALT_MAX = 6000.0
 PROFILE_ALT_M = 5500.0
-DISPLAY_N = 2048                    # common length for the profile visual
+N_REALIZATIONS = 5                  # rows per dataset column
+STEAM_LEN = 1024                    # samples shown for STEAM
+SAM_LEN   = 2048                    # samples shown for SAM
+FIF_LEN   = 1024                    # samples shown for FIF (after coarsening)
+FIF_DISPLAY_N = 2048                # coarsened FIF length before truncation
 FIF_GEN_SIZE = 16384                # generate FIF at higher resolution...
-FIF_COARSEN  = FIF_GEN_SIZE // DISPLAY_N   # ...then box-average down to DISPLAY_N
+FIF_COARSEN  = FIF_GEN_SIZE // FIF_DISPLAY_N   # ...then box-average down
 FIF_ALPHA_FORCED = 2.0
 Q_VALUES = np.arange(0.1, 2.51, 0.1)
 
@@ -92,14 +98,37 @@ def _km_lag_window(lo_km, hi_km, dx_m):
     return lo, hi
 
 
-def _profile_line(z, data_4d, target_alt_m):
-    """1D horizontal profile at the z level closest to target_alt_m.
+def _pick_profiles(data_4d, z, target_alt_m, n_picks, length):
+    """Return up to n_picks 1D demeaned profiles of given length.
 
-    data_4d has shape (n, axis1, axis2, nz); axis1 is the full-density
-    horizontal axis for both STEAM and SAM here.
+    data_4d has shape (n_ens, axis1, axis2, nz); axis1 is the full-density
+    horizontal axis for both STEAM and SAM. Realizations are drawn from
+    the combined (axis0, axis2) pool of independent spatial lines —
+    axis0 is the ensemble/time axis and axis2 is the strided-horizontal
+    axis (different rows in the horizontal plane). If the pool is still
+    too small, the remainder comes from non-overlapping windows along
+    axis 1 of the first (i, j) pair.
     """
     k = int(np.argmin(np.abs(z - target_alt_m)))
-    return np.asarray(data_4d[0, :, 0, k], dtype=np.float64)
+    n_ens, n_spatial, n_ax2 = (data_4d.shape[0],
+                                data_4d.shape[1],
+                                data_4d.shape[2])
+    pairs = [(i, j) for i in range(n_ens) for j in range(n_ax2)]
+    sel = np.linspace(0, len(pairs) - 1, n_picks).round().astype(int)
+    sel = list(dict.fromkeys(sel.tolist()))
+    profiles = []
+    for s in sel:
+        i, j = pairs[s]
+        v = np.asarray(data_4d[i, :length, j, k], dtype=np.float64)
+        profiles.append(v - v.mean())
+    start = length
+    i0, j0 = pairs[0]
+    while len(profiles) < n_picks and start + length <= n_spatial:
+        v = np.asarray(data_4d[i0, start:start + length, j0, k],
+                       dtype=np.float64)
+        profiles.append(v - v.mean())
+        start += length
+    return profiles
 
 
 def _to_numpy(x):
@@ -136,46 +165,49 @@ def _run(variable_label, steam_var, sam_loader, file_tag):
     print(f'  STEAM fit: H={H_s:.4f}, C1={C1_s:.4f}, alpha={alpha_s:.4f}')
     print(f'  SAM   fit: H={H_a:.4f}, C1={C1_a:.4f}, alpha={alpha_a:.4f}')
 
-    # FIF generated at FIF_GEN_SIZE with STEAM C1/H and alpha=2 (user-forced),
-    # then box-averaged by FIF_COARSEN to DISPLAY_N.
-    fif_full = np.asarray(si.FIF_1D(FIF_GEN_SIZE, alpha=FIF_ALPHA_FORCED,
-                                     C1=float(C1_s), H=float(H_s)))
-    fif = fif_full.reshape(-1, FIF_COARSEN).mean(axis=1)
-    print(f'  FIF(gen={FIF_GEN_SIZE}, coarsen={FIF_COARSEN}x→{len(fif)}, '
-          f'alpha={FIF_ALPHA_FORCED}, C1={C1_s:.4f}, H={H_s:.4f})')
+    # FIF: 5 independent draws at FIF_GEN_SIZE with STEAM C1/H and α=2,
+    # coarsened to FIF_DISPLAY_N and truncated to FIF_LEN.
+    fif_profiles = []
+    for _ in range(N_REALIZATIONS):
+        ff = np.asarray(si.FIF_1D(FIF_GEN_SIZE, alpha=FIF_ALPHA_FORCED,
+                                   C1=float(C1_s), H=float(H_s)))
+        ff = ff.reshape(-1, FIF_COARSEN).mean(axis=1)[:FIF_LEN]
+        fif_profiles.append(ff - ff.mean())
+    print(f'  FIF: {N_REALIZATIONS} draws at gen={FIF_GEN_SIZE}, '
+          f'coarsen={FIF_COARSEN}× → {FIF_DISPLAY_N}, shown {FIF_LEN}; '
+          f'α={FIF_ALPHA_FORCED}, C1={C1_s:.4f}, H={H_s:.4f}')
 
-    # ── Plot 1: profiles ─────────────────────────────────────────────
-    p_steam = _profile_line(z_s, steam_data, PROFILE_ALT_M)
-    p_sam   = _profile_line(z_a, sam_data, PROFILE_ALT_M)
-    N = min(DISPLAY_N, len(p_steam), len(p_sam), len(fif))
-    p_steam, p_sam, p_fif = p_steam[:N], p_sam[:N], fif[:N]
-    # Demean each — intermittency character is in the fluctuations
-    p_steam = p_steam - p_steam.mean()
-    p_sam   = p_sam   - p_sam.mean()
-    p_fif   = p_fif   - p_fif.mean()
+    # ── Plot 1: 5 separate (STEAM, SAM, FIF) stacks ──────────────────
+    steam_profiles = _pick_profiles(steam_data, z_s, PROFILE_ALT_M,
+                                     N_REALIZATIONS, STEAM_LEN)
+    sam_profiles   = _pick_profiles(sam_data,   z_a, PROFILE_ALT_M,
+                                     N_REALIZATIONS, SAM_LEN)
+    print(f'  profile sets: STEAM={len(steam_profiles)} '
+          f'(len {STEAM_LEN}), SAM={len(sam_profiles)} (len {SAM_LEN}), '
+          f'FIF={len(fif_profiles)} (len {FIF_LEN})')
 
-    fig, axes = plt.subplots(3, 1, figsize=(8, 4.5), sharex=True)
-    panel_labels = [
-        f'STEAM {variable_label}  (truncated to {N})',
-        f'SAM {variable_label}',
-        f'FIF   (gen {FIF_GEN_SIZE}, coarsened {FIF_COARSEN}× → {N};  '
-        f'α={FIF_ALPHA_FORCED:.0f}, C₁={C1_s:.3f}, H={H_s:.3f})',
-    ]
-    for ax, prof, lbl in zip(axes, [p_steam, p_sam, p_fif], panel_labels):
-        ax.plot(prof, '-', color='black', lw=0.3)
-        ax.text(0.01, 0.88, lbl, transform=ax.transAxes,
-                fontsize=9, color='black', family='monospace')
-        ax.set_yticks([])
-        for s in ('top', 'right', 'left'):
-            ax.spines[s].set_visible(False)
-        ax.grid(False)
-    axes[-1].set_xlabel('Sample index')
-    axes[-1].set_xlim(0, N - 1)
-    plt.tight_layout()
-    out_a = FIGURES_DIR / f'intermittency_profiles_{file_tag}.pdf'
-    plt.savefig(out_a, transparent=True)
-    plt.close(fig)
-    print(f'  saved {out_a}')
+    n_sets = min(N_REALIZATIONS, len(steam_profiles),
+                 len(sam_profiles), len(fif_profiles))
+    for r in range(n_sets):
+        rows = [('STEAM', steam_profiles[r]),
+                ('SAM',   sam_profiles[r]),
+                ('FIF',   fif_profiles[r])]
+        fig, axes = plt.subplots(3, 1, figsize=(8, 4.5))
+        for ax, (label, prof) in zip(axes, rows):
+            ax.plot(prof, '-', color='black', lw=0.25)
+            ax.set_xlim(0, len(prof) - 1)
+            ax.text(0.01, 0.88, label, transform=ax.transAxes,
+                    fontsize=11, color='black', family='monospace')
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for s in ('top', 'right', 'left', 'bottom'):
+                ax.spines[s].set_visible(False)
+            ax.grid(False)
+        plt.tight_layout()
+        out_a = FIGURES_DIR / f'intermittency_profiles_{file_tag}_{r+1}.pdf'
+        plt.savefig(out_a, transparent=True)
+        plt.close(fig)
+        print(f'  saved {out_a}')
 
     # ── Plot 2: K(q) comparison ──────────────────────────────────────
     fig, ax = plt.subplots(figsize=(6, 4.5))
