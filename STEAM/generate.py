@@ -30,6 +30,7 @@ import netCDF4
 import numpy as np
 import xarray as xr
 
+from steam import constants
 from steam.simulate import simulate, refine
 from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 
@@ -42,7 +43,7 @@ NSEEDS           = 1
 NX, NY           = 1024, 1024
 DOMAIN_WIDTH     = 4_000_000.0          # m
 DOMAIN_HEIGHT    = 20_000.0              # m
-OUTER_SCALE      = DOMAIN_WIDTH / 2      # m
+OUTER_SCALE      = DOMAIN_WIDTH / 6      # m
 N_SCALE_CLASSES_PER_DYAD = 1             # 1 → dyadic (gap=2); 2 → gap=√2; etc.
 SPARSITY_FACTORS = (1,1,1)
 SURFACE_PRESSURE = 101_325.0
@@ -51,7 +52,7 @@ QT_MIN, QT_MAX   = 0.0, 30 / 1000
 
 # Spheroscale: 'constant' (ls = SPHEROSCALE_CONST) or 'linear' (ramps with z).
 SPHEROSCALE_MODE  = 'constant'
-SPHEROSCALE_CONST = 30.0                 # m  (if 'constant')
+SPHEROSCALE_CONST = 200.0                 # m  (if 'constant')
 SPHEROSCALE_SFC   = 200.0                # m  (if 'linear', at z = 0)
 SPHEROSCALE_TOP   = 1.0                  # m  (if 'linear', at z = DOMAIN_HEIGHT)
 
@@ -68,8 +69,8 @@ ANISOTROPY = 'piecewise_isotropic_below_spheroscale'
 STRIP = dict(narrow_cells=12, long_cells=None, refine=16,
              positions=('center', 'edge'), z_min=None, z_max=None)
 # CUBE: y centered in the parent strip; x chosen by cloud-fraction scan.
-CUBE  = dict(narrow_cells=64, long_cells=64,    refine=32,
-             z_min=2000.0, z_max=4000.0)
+CUBE  = dict(narrow_cells=32, long_cells=32,    refine=32,
+             z_min=0.0, z_max=4000.0)
 RUN_STRIPS = True
 RUN_CUBES  = True
 TARGET_CF_CUBES = 0.2
@@ -217,26 +218,70 @@ _DIAG_ATTRS = {
 }
 
 
-def compute_diagnostics_for_group(nc_path: Path, group: str) -> None:
-    """recover_diagnostics + write T/qv/qc/qi/p into the group (public API
-    compute_diagnostics only supports the root group)."""
+_REIMPL_WARNED = False
+
+
+def compute_diagnostics_for_group(nc_path: Path, group: str,
+                                  chunk_nx: int = 128) -> None:
+    """recover_diagnostics + write T/qv/qc/qi/p into the group.
+
+    Local reimplementation of steam.thermodynamics.compute_diagnostics for
+    non-root groups. The package function now accepts a ``group=`` kwarg
+    (with nested-path support via netCDF4's ``ds[group]``), so this copy
+    should go away — see the warning below.
+    """
+    global _REIMPL_WARNED
+    if not _REIMPL_WARNED:
+        print("  [warn] compute_diagnostics_for_group is a local reimplementation "
+              "of steam.thermodynamics.compute_diagnostics; it should be replaced "
+              "by a direct call with group=<path>. Honoring "
+              "steam.constants.output_compress here as a stopgap.")
+        _REIMPL_WARNED = True
+
+    compress = constants.output_compress
+    complevel = 4 if compress else 0
+
     with netCDF4.Dataset(nc_path, 'r+') as ds:
         grp = ds if group == '/' else ds[group]
-        h = grp.variables['h'][:]
-        qt = grp.variables['qt'][:]
-        z = grp.variables['z'][:]
+        nx = len(grp.dimensions['x'])
+        ny = len(grp.dimensions['y'])
+        nz = len(grp.dimensions['z'])
+        z_values = grp.variables['z'][:]
         sp = float(grp.surface_pressure)
-        diag = recover_diagnostics(h, qt, z, sp)
-        for name, arr in diag.items():
-            if name in grp.variables:
-                v = grp.variables[name]
-            else:
+
+        for name, (units, long_name) in _DIAG_ATTRS.items():
+            if name not in grp.variables:
                 v = grp.createVariable(name, 'f4', ('x', 'y', 'z'),
-                                       zlib=True, complevel=4)
-                units, long_name = _DIAG_ATTRS[name]
+                                       zlib=compress, complevel=complevel,
+                                       chunksizes=(min(chunk_nx, nx),
+                                                   min(64, ny), nz))
                 v.units = units
                 v.long_name = long_name
-            v[:] = arr
+
+        h_var = grp.variables['h']
+        qt_var = grp.variables['qt']
+
+        chunks = [(x0, min(x0 + chunk_nx, nx)) for x0 in range(0, nx, chunk_nx)]
+        n_chunks = len(chunks)
+        t_start = time.perf_counter()
+
+        for done, (x0, x1) in enumerate(chunks, start=1):
+            h_chunk = h_var[x0:x1, :, :]
+            qt_chunk = qt_var[x0:x1, :, :]
+            result = recover_diagnostics(h_chunk, qt_chunk, z_values, sp)
+            for name in ('T', 'qv', 'qc', 'qi', 'p'):
+                grp.variables[name][x0:x1, :, :] = result[name].astype(np.float32)
+            elapsed = time.perf_counter() - t_start
+            pct = 100.0 * done / n_chunks
+            rate = done / elapsed if elapsed > 0 else 0.0
+            eta = (n_chunks - done) / rate if rate > 0 else 0.0
+            print(f"  diagnostics (group '{group}'): {done}/{n_chunks} chunks "
+                  f"({pct:5.1f}%) [1w, {elapsed:5.1f}s elapsed, ~{eta:5.1f}s left]   ",
+                  end='\r', flush=True)
+
+        total = time.perf_counter() - t_start
+        print(f"  diagnostics (group '{group}'): done in {total:.1f}s"
+              "                                                      ")
 
 
 def position_slice(axis_len: int, cells: int, position: str) -> tuple[int, int]:
