@@ -2,9 +2,16 @@
 
 Reuses the ocean FIF wave field across all renders and each cube's sigma
 field across its 6 views, so per-view cost is just the render kernel.
+
+Modes (--mode):
+    cube   — render only the cube subdomain (default, current behavior).
+    nested — render the cube inside its parent strip as two nested levels;
+             cube sigma is sampled inside the cube AABB, strip sigma
+             everywhere inside the strip AABB but outside the cube.
 """
 from __future__ import annotations
 
+import argparse
 import time
 from pathlib import Path
 
@@ -22,22 +29,25 @@ REPO = Path(__file__).resolve().parents[2]
 RENDER_DIR = REPO / 'renders' / 'witness_cubes'
 NC_DIR = REPO / 'STEAM' / 'data'
 
-IMG_SIZE = (1600, 1200)
+IMG_SIZE = (3200, 2400)
 CUBE_GROUP_CANDIDATES = ('cube_center', 'cube_edge')
 
-# Two rings of four views, all placed 20% outside the horizontal domain edge
-# and aimed at the domain centre (view elevation follows from geometry).
-#   down_*  — slightly above the top of the domain (cam_z = 1.1*bmax_z).
-#   up_*    — just above the ocean surface (cam_z ≈ 0).
+# Per-view configuration.
+#   pos       — camera position, domain-relative coords (±1 = domain edge;
+#               z: -1 → ocean surface, +1 → bmax[2]).
+#   view_az   — camera forward azimuth (met: 0°=N, 90°=E, CW).
+#   view_el   — camera forward elevation above horizon (negative = down).
+#   sun_az    — sun azimuth (met convention).
+#   sun_el    — sun elevation above horizon.
 VIEWS = [
-    ('down_n', ( 0.0,   1.2,   1.2)),
-    ('down_e', ( 1.2,   0.0,   1.2)),
-    ('down_s', ( 0.0,  -1.2,   1.2)),
-    ('down_w', (-1.2,   0.0,   1.2)),
-    ('up_n',   ( 0.0,   1.2,  -0.99)),
-    ('up_e',   ( 1.2,   0.0,  -0.99)),
-    ('up_s',   ( 0.0,  -1.2,  -0.99)),
-    ('up_w',   (-1.2,   0.0,  -0.99)),
+    {'name': 'down_n', 'pos': ( 0.0,   1.5,   0),   'view_az': 180.0, 'view_el': 0.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    # {'name': 'down_e', 'pos': ( 1.1,   0.0,   1),   'view_az': 270.0, 'view_el': -25.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'down_s', 'pos': ( 0.0,  -1.5,   0),   'view_az':   0.0, 'view_el': 0.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    # {'name': 'down_w', 'pos': (-1.1,   0.0,   1),   'view_az':  90.0, 'view_el': -25.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'up_n',   'pos': ( 0.0,   .9,  -0.995), 'view_az': 180.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'up_e',   'pos': ( .9,   0.0,  -0.995), 'view_az': 270.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'up_s',   'pos': ( 0.0,  -.9,  -0.995), 'view_az':   0.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'up_w',   'pos': (-.9,   0.0,  -0.995), 'view_az':  90.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
 ]
 
 
@@ -61,7 +71,7 @@ def discover_cubes():
     return cubes
 
 
-def load_cube_level(nc_path: Path, group: str, ext_mult: float) -> NestedLevel:
+def load_level(nc_path: Path, group: str, ext_mult: float) -> NestedLevel:
     data = io.load_and_validate(str(nc_path), dataset_group=group)
     lw_da = data['liquid_water_data']
     iw_da = data['ice_water_data']
@@ -94,14 +104,12 @@ def load_cube_level(nc_path: Path, group: str, ext_mult: float) -> NestedLevel:
     return NestedLevel(sigma=sigma, bmin=bmin, bmax=bmax, name=group)
 
 
-def camera_basis(pos_rel, bmin, bmax):
+def camera_basis(pos_rel, view_az, view_el, bmin, bmax):
     cam = np.empty(3, dtype=np.float64)
     cam[0] = bmin[0] + (pos_rel[0] + 1.0) * 0.5 * (bmax[0] - bmin[0])
     cam[1] = bmin[1] + (pos_rel[1] + 1.0) * 0.5 * (bmax[1] - bmin[1])
     cam[2] = (pos_rel[2] + 1.0) * 0.5 * bmax[2]
-    center = 0.5 * (bmin + bmax)
-    forward = center - cam
-    forward /= np.linalg.norm(forward)
+    forward = direction_from_azimuth_elevation(view_az, view_el)
     world_up = np.array([0.0, 0.0, 1.0])
     if abs(np.dot(forward, world_up)) > 0.999:
         world_up = np.array([0.0, 1.0, 0.0])
@@ -110,26 +118,37 @@ def camera_basis(pos_rel, bmin, bmax):
     return cam, forward, right, up
 
 
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('--mode', choices=('cube', 'nested'), default='cube',
+                   help="'cube' (default) renders the cube subdomain only. "
+                        "'nested' renders the cube inside its parent strip "
+                        "using cloudyview's nested-level functionality.")
+    return p.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+    mode = args.mode
+    out_prefix = 'witness_nested' if mode == 'nested' else 'witness'
+
     RENDER_DIR.mkdir(parents=True, exist_ok=True)
     cubes = discover_cubes()
+    print(f"Mode: {mode}")
     print(f"Discovered {len(cubes)} cube groups:")
     for nc_path, group, tag in cubes:
         print(f"  {nc_path.name} :: {group}  ->  {tag}")
 
     witness_cfg = config.get_witness_config()
-    cam_cfg = witness_cfg['camera']
-    sun_cfg = witness_cfg['sun']
     render_cfg = witness_cfg['rendering']
     ocean_cfg = render_cfg['ocean']
 
     ocean_enabled = ocean_cfg['enabled']
-    camera_fov = cam_cfg['fov']
+    camera_fov = 100
     n_light_steps = render_cfg['n_light_steps']
     exposure = render_cfg['exposure']
     ext_mult = render_cfg['extinction_multiplier']
-
-    sun_dir = direction_from_azimuth_elevation(sun_cfg['azimuth'], sun_cfg['elevation'])
 
     print("\nPrecomputing ocean FIF wave field (shared across all renders)...")
     t0 = time.perf_counter()
@@ -142,24 +161,39 @@ def main() -> None:
 
     for nc_path, group, tag in cubes:
         pending = [v for v in VIEWS
-                   if not (RENDER_DIR / f'witness_{tag}_{v[0]}.png').exists()]
+                   if not (RENDER_DIR / f'{out_prefix}_{tag}_{v["name"]}.png').exists()]
         if not pending:
             print(f"\n[{tag}] all views present, skip load")
             continue
 
         print(f"\n[{tag}] loading {nc_path.name} :: {group}")
         t0 = time.perf_counter()
-        level = load_cube_level(nc_path, group, ext_mult)
-        print(f"  load + sigma: {time.perf_counter() - t0:.1f}s  "
-              f"grid={level.sigma.shape}")
-        ocean_z = (ocean_cfg['height'] + 1.0) * 0.5 * level.bmax[2]
+        cube_level = load_level(nc_path, group, ext_mult)
+        print(f"  cube: {time.perf_counter() - t0:.1f}s  "
+              f"grid={cube_level.sigma.shape}")
 
-        for view, pos in pending:
-            out = RENDER_DIR / f'witness_{tag}_{view}.png'
-            cam, fwd, right, up = camera_basis(pos, level.bmin, level.bmax)
+        levels = [cube_level]
+        if mode == 'nested':
+            strip_group = group.replace('cube_', 'strip_')
+            t0 = time.perf_counter()
+            strip_level = load_level(nc_path, strip_group, ext_mult)
+            print(f"  strip ({strip_group}): {time.perf_counter() - t0:.1f}s  "
+                  f"grid={strip_level.sigma.shape}")
+            levels.append(strip_level)
+
+        ocean_z = (ocean_cfg['height'] + 1.0) * 0.5 * cube_level.bmax[2]
+
+        for view in pending:
+            name = view['name']
+            out = RENDER_DIR / f'{out_prefix}_{tag}_{name}.png'
+            cam, fwd, right, up = camera_basis(
+                view['pos'], view['view_az'], view['view_el'],
+                cube_level.bmin, cube_level.bmax)
+            sun_dir = direction_from_azimuth_elevation(
+                view['sun_az'], view['sun_el'])
             t0 = time.perf_counter()
             image = render_nested(
-                [level],
+                levels,
                 camera_position=tuple(cam),
                 camera_forward=tuple(fwd),
                 camera_right=tuple(right),
@@ -176,7 +210,7 @@ def main() -> None:
             )
             img_uint8 = (np.clip(image, 0, 1) * 255).astype(np.uint8)
             PILImage.fromarray(img_uint8).save(str(out))
-            print(f"  [{view}] -> {out.name} ({time.perf_counter() - t0:.1f}s)")
+            print(f"  [{name}] -> {out.name} ({time.perf_counter() - t0:.1f}s)")
 
 
 if __name__ == '__main__':
