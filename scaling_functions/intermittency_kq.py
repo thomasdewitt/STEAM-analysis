@@ -14,13 +14,13 @@ VARIABLE = 'qt'
 # CM1:                     hus, ta, ua, va, wa, pa, clw, cli, plw, pli, hur, tntr, tntrs, tntrl
 # STEAM:                   qv, qt, qc, qi, h, T, p
 # dropsonde:               q, ta, theta, rh, u, v, p, wspd, wdir
-METHOD = 'haar'   # 'haar' or 'structure_function'
+METHOD = 'structure_function'   # 'haar' or 'structure_function'
 DIRECTION = 'x'                 # 'x' (horizontal) or 'z' (vertical)
-STEAM_GROUP = 'cubes'          # STEAM only: 'parent', 'strips', 'cubes', or explicit path
-ALT_MIN = 1000                  # Altitude subsetting in meters (None = use all)
-ALT_MAX = 2000
+STEAM_GROUP = 'strips'          # STEAM only: 'parent', 'strips', 'cubes', or explicit path
+ALT_MIN = 4000                  # Altitude subsetting in meters (None = use all)
+ALT_MAX = 5000
 MIN_SEP = 4
-MAX_SEP = 32
+MAX_SEP = 64
 ORDERS = np.arange(0.25, 3.25, 0.25)
 
 # ── Load data ──
@@ -77,7 +77,7 @@ for i, q in enumerate(ORDERS):
                                                   lags='powers of 1.05')
     elif METHOD == 'haar':
         lags, vals = haar_fluctuation_analysis(data, order=q, axis=analysis_axis,
-                                                lags='powers of 1.05')
+                                                lags='powers of 1.05', nan_behavior='ignore')
     else:
         raise ValueError(f"Unknown method: {METHOD}")
 
