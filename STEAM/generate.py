@@ -36,7 +36,7 @@ from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
 BASE_SEED        = 1
-NSEEDS           = 10
+NSEEDS           = 1
 
 # Parent: domain size and outer_scale are fixed; change NX/NY to sweep resolution.
 NX, NY           = 1024, 1024
@@ -50,9 +50,9 @@ H_MAX, H_MIN     = 400 * 1004, 250 * 1004
 QT_MIN, QT_MAX   = 0.0, 30 / 1000
 
 # Spheroscale: 'constant' (ls = SPHEROSCALE_CONST) or 'linear' (ramps with z).
-SPHEROSCALE_MODE  = 'linear'
-SPHEROSCALE_CONST = 10.0                 # m  (if 'constant')
-SPHEROSCALE_SFC   = 30.0                # m  (if 'linear', at z = 0)
+SPHEROSCALE_MODE  = 'constant'
+SPHEROSCALE_CONST = 30.0                 # m  (if 'constant')
+SPHEROSCALE_SFC   = 200.0                # m  (if 'linear', at z = 0)
 SPHEROSCALE_TOP   = 1.0                  # m  (if 'linear', at z = DOMAIN_HEIGHT)
 
 # Grid anisotropy: 'canonical' | 'piecewise_isotropic_below_spheroscale'
@@ -65,11 +65,11 @@ ANISOTROPY = 'piecewise_isotropic_below_spheroscale'
 # long_cells:   cells in the long (x) axis; None means the full parent extent.
 # refine:       refinement factor (applies to both axes).
 # positions:    sequence of narrow-axis (y) positions — 'center' or 'edge'.
-STRIP = dict(narrow_cells=2, long_cells=None, refine=16,
+STRIP = dict(narrow_cells=12, long_cells=None, refine=16,
              positions=('center', 'edge'), z_min=None, z_max=None)
 # CUBE: y centered in the parent strip; x chosen by cloud-fraction scan.
-CUBE  = dict(narrow_cells=20, long_cells=20,    refine=64,
-             z_min=500.0, z_max=2000.0)
+CUBE  = dict(narrow_cells=64, long_cells=64,    refine=32,
+             z_min=2000.0, z_max=4000.0)
 RUN_STRIPS = True
 RUN_CUBES  = True
 TARGET_CF_CUBES = 0.2
@@ -251,10 +251,12 @@ def position_slice(axis_len: int, cells: int, position: str) -> tuple[int, int]:
 
 
 def find_best_cube_x_start(nc_path: Path, parent_group: str, cfg: dict,
-                           z_target_m: float, threshold: float = 0.0) -> int:
+                           threshold: float = 0.0) -> int:
     """Scan along the long (x) axis of parent_group; return the x_start
-    for a cube-sized window whose cloud fraction (qc > threshold) at the
-    vertical level closest to z_target_m is nearest 0.5.
+    for a cube-sized window whose satellite-like projected cloud fraction
+    is nearest TARGET_CF_CUBES. The projection sums qc+qi vertically over
+    the parent layers that fall inside the cube's [z_min, z_max] range,
+    then thresholds the column total (> threshold) to mark "cloudy" pixels.
     y is centered within the parent strip.
     """
     parent_nx, parent_ny, parent_dx, parent_fk = read_group_info(nc_path, parent_group)
@@ -265,11 +267,17 @@ def find_best_cube_x_start(nc_path: Path, parent_group: str, cfg: dict,
     with netCDF4.Dataset(nc_path, 'r') as ds:
         grp = ds if parent_group == '/' else ds[parent_group]
         z = grp.variables['z'][:]
-        z_idx = int(np.argmin(np.abs(z - z_target_m)))
-        z_used = float(z[z_idx])
-        qc_slab = grp.variables['qc'][:, y_start:y_start + cells_y, z_idx]
+        z_lo = 0 if cfg['z_min'] is None else int(np.searchsorted(z, cfg['z_min'], side='left'))
+        z_hi = len(z) if cfg['z_max'] is None else int(np.searchsorted(z, cfg['z_max'], side='right'))
+        z_lo = max(0, min(z_lo, len(z) - 1))
+        z_hi = max(z_lo + 1, min(z_hi, len(z)))
+        z_used_lo, z_used_hi = float(z[z_lo]), float(z[z_hi - 1])
+        n_layers = z_hi - z_lo
+        qc_col = grp.variables['qc'][:, y_start:y_start + cells_y, z_lo:z_hi].sum(axis=2)
+        qi_col = grp.variables['qi'][:, y_start:y_start + cells_y, z_lo:z_hi].sum(axis=2)
 
-    mask = np.asarray(qc_slab > threshold, dtype=np.int64)      # (parent_nx, cells_y)
+    column = qc_col + qi_col                                     # (parent_nx, cells_y)
+    mask = np.asarray(column > threshold, dtype=np.int64)
     row_sum = mask.sum(axis=1)                                   # (parent_nx,)
     csum = np.concatenate(([0], np.cumsum(row_sum)))
     win_sums = csum[cells_x:] - csum[:-cells_x]                  # (parent_nx - cells_x + 1,)
@@ -281,8 +289,9 @@ def find_best_cube_x_start(nc_path: Path, parent_group: str, cfg: dict,
     x_center_m = x_center_cell * parent_dx
     y_center_m = y_center_cell * parent_dx
     centered_cf = float(cf[(parent_nx - cells_x) // 2])
-    print(f"  cube scan in '{parent_group}' @ z={z_used:.1f}m "
-          f"(target {z_target_m:.0f}m, threshold qc>{threshold:g}):")
+    print(f"  cube scan in '{parent_group}' over z=[{z_used_lo:.0f}…{z_used_hi:.0f}]m "
+          f"({n_layers} layers, target [{cfg['z_min']}…{cfg['z_max']}]m, "
+          f"threshold column(qc+qi)>{threshold:g}):")
     print(f"    center @ (x,y) cell=({x_center_cell:.1f}, {y_center_cell:.1f}) "
           f"= ({x_center_m/1e3:.2f}, {y_center_m/1e3:.3f}) km in strip   "
           f"x_start={best_x}")
@@ -399,8 +408,7 @@ def run_one_seed(seed: int, h_profile: np.ndarray, qt_profile: np.ndarray,
             if RUN_CUBES:
                 cube_group = f'refinements/cube_{strip_pos}'
                 print(f"\n=== Cube [{strip_pos}] ===")
-                z_target = 0.5 * (CUBE['z_min'] + CUBE['z_max'])
-                x_start = find_best_cube_x_start(nc_path, strip_group, CUBE, z_target)
+                x_start = find_best_cube_x_start(nc_path, strip_group, CUBE)
                 run_refine(nc_path, strip_group, CUBE, ('center', 'center'),
                            cube_group, level_idx=2, seed=seed,
                            x_start_override=x_start)
