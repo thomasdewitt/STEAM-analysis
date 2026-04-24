@@ -2,7 +2,7 @@
 from pathlib import Path
 
 # SAM TWPICE configuration
-SAM_TWPICE_DATA_DIR = '/run/media/thomas/BLUE/TWPICE'
+SAM_TWPICE_DATA_DIR = '/home/thomas/code-and-data/SAM_TWPICE'
 SAM_TWPICE_TIMESTEPS = ['0000000150', '0000001800', '0000003450']
 SAM_TWPICE_VARIABLES = ['QV', 'QT', 'QC', 'QI', 'MSE', 'TABS', 'U', 'V', 'W', 'PP']
 
