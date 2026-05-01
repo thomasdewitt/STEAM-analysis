@@ -36,7 +36,7 @@ from steam.thermodynamics import compute_diagnostics, recover_diagnostics
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PROFILE_DATASET  = 'Dropsonde_extrap'
-BASE_SEED        = 2
+BASE_SEED        = 1
 NSEEDS           = 4
 
 # Parent: domain size and outer_scale are fixed; change NX/NY to sweep resolution.
@@ -69,11 +69,11 @@ ANISOTROPY = 'canonical'
 STRIP = dict(narrow_cells=12, long_cells=None, refine=16,
              positions=('center', 'edge'), z_min=None, z_max=None)
 # CUBE: y centered in the parent strip; x chosen by cloud-fraction scan.
-CUBE  = dict(narrow_cells=32, long_cells=32,    refine=32,
-             z_min=0.0, z_max=4000.0)
+CUBE  = dict(narrow_cells=72, long_cells=72,    refine=32,
+             z_min=1500.0, z_max=4000.0)
 RUN_STRIPS = True
 RUN_CUBES  = True
-TARGET_CF_CUBES = 0.2
+TARGET_CF_CUBES = 0.5
 
 if RUN_CUBES and not RUN_STRIPS:
     raise ValueError("RUN_CUBES=True requires RUN_STRIPS=True (cubes are carved from strips).")

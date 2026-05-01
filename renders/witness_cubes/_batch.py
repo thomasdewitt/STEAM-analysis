@@ -30,6 +30,7 @@ RENDER_DIR = REPO / 'renders' / 'witness_cubes'
 NC_DIR = REPO / 'STEAM' / 'data'
 
 IMG_SIZE = (3200, 2400)
+#IMG_SIZE = (800,600)
 CUBE_GROUP_CANDIDATES = ('cube_center', 'cube_edge')
 
 # Per-view configuration.
@@ -40,14 +41,14 @@ CUBE_GROUP_CANDIDATES = ('cube_center', 'cube_edge')
 #   sun_az    — sun azimuth (met convention).
 #   sun_el    — sun elevation above horizon.
 VIEWS = [
-    {'name': 'down_n', 'pos': ( 0.0,   1.5,   0),   'view_az': 180.0, 'view_el': 0.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    # {'name': 'down_e', 'pos': ( 1.1,   0.0,   1),   'view_az': 270.0, 'view_el': -25.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    {'name': 'down_s', 'pos': ( 0.0,  -1.5,   0),   'view_az':   0.0, 'view_el': 0.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    # {'name': 'down_w', 'pos': (-1.1,   0.0,   1),   'view_az':  90.0, 'view_el': -25.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    {'name': 'up_n',   'pos': ( 0.0,   .9,  -0.995), 'view_az': 180.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    {'name': 'up_e',   'pos': ( .9,   0.0,  -0.995), 'view_az': 270.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    {'name': 'up_s',   'pos': ( 0.0,  -.9,  -0.995), 'view_az':   0.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
-    {'name': 'up_w',   'pos': (-.9,   0.0,  -0.995), 'view_az':  90.0, 'view_el':   45.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'down_n', 'pos': ( 0.0,   1.2,   -.995),   'view_az': 180.0, 'view_el': 20.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'down_e', 'pos': ( 1.2,   0.0,   -.995),   'view_az': 270.0, 'view_el': 20.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'down_s', 'pos': ( 0.0,  -1.2,   -.995),   'view_az':   0.0, 'view_el': 20.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'down_w', 'pos': (-1.2,   0.0,   -.995),   'view_az':  90.0, 'view_el': 20.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'up_n',   'pos': ( 0.0,   .8,  -0.995), 'view_az': 180.0, 'view_el':   60.0, 'sun_az': 150.0, 'sun_el': 55.0},
+    {'name': 'up_e',   'pos': ( .8,   0.0,  -0.995), 'view_az': 270.0, 'view_el':   60.0, 'sun_az': 230.0, 'sun_el': 55.0},
+    {'name': 'up_s',   'pos': ( 0.0,  -.8,  -0.995), 'view_az':   0.0, 'view_el':   60.0, 'sun_az': 20.0, 'sun_el': 55.0},
+    {'name': 'up_w',   'pos': (-.8,   0.0,  -0.995), 'view_az':  90.0, 'view_el':   60.0, 'sun_az': 120.0, 'sun_el': 55.0},
 ]
 
 
