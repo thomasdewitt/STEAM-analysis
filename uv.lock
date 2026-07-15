@@ -97,15 +97,18 @@ requires-dist = [
     { name = "black", marker = "extra == 'all'", specifier = ">=21.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=21.0" },
     { name = "drjit", marker = "extra == 'all'", specifier = ">=0.3.0" },
+    { name = "drjit", marker = "extra == 'interactive'", specifier = ">=0.3.0" },
     { name = "drjit", marker = "extra == 'radiative-transfer'", specifier = ">=0.3.0" },
     { name = "flake8", marker = "extra == 'all'", specifier = ">=3.9" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=3.9" },
     { name = "glfw", marker = "extra == 'interactive'", specifier = ">=2.6" },
     { name = "imageio", marker = "extra == 'dev'", specifier = ">=2.28" },
+    { name = "imgui-bundle", marker = "extra == 'interactive'", specifier = ">=1.6" },
     { name = "isort", marker = "extra == 'all'", specifier = ">=5.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "matplotlib", specifier = ">=3.3" },
     { name = "mitsuba", marker = "extra == 'all'", specifier = ">=3.0.0" },
+    { name = "mitsuba", marker = "extra == 'interactive'", specifier = ">=3.0.0" },
     { name = "mitsuba", marker = "extra == 'radiative-transfer'", specifier = ">=3.0.0" },
     { name = "netcdf4", specifier = ">=1.5" },
     { name = "numba", specifier = ">=0.57" },
@@ -1552,7 +1555,7 @@ wheels = [
 
 [[package]]
 name = "scaleinvariance"
-version = "0.13.0"
+version = "0.15.0"
 source = { editable = "../scaleinvariance" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1733,6 +1736,9 @@ name = "steam"
 version = "0.1.0"
 source = { editable = "../turbulon-model" }
 dependencies = [
+    { name = "netcdf4", version = "1.7.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' and platform_machine == 'ARM64' and sys_platform == 'win32'" },
+    { name = "netcdf4", version = "1.7.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or platform_machine != 'ARM64' or sys_platform != 'win32'" },
+    { name = "numba" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -1742,10 +1748,15 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "netcdf4", specifier = ">=1.5" },
+    { name = "numba", specifier = ">=0.57" },
     { name = "numpy" },
     { name = "scipy" },
     { name = "torch" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.3.5" }]
 
 [[package]]
 name = "sympy"
