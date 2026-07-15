@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """Canonical STEAM run initialized from the SAM-TWPICE mean profiles.
 
-Matches SAM's horizontal grid exactly (2048 x 2048, dx = 100 m, 204.8 km).
-The simulated domain is the lowest 20 km. Outer scale = the domain (204.8 km);
-spheroscale profile log-linear from 1000 m at the surface to 10 m at 20 km,
-with turbulons isotropic below the spheroscale. Flux noise c = 0.21 (the
-TWPICE C1 = 0.1 peg). Appends T/qv/qc/qi/p diagnostics for cloud statistics.
+Matches SAM's grid in x (2048, dx = 100 m, 204.8 km) at half its y extent
+(1024, 102.4 km). The simulated domain is the lowest 20 km. Outer scale =
+102.4 km (each horizontal extent must be an integer multiple of it: x holds
+two tiles, y one); spheroscale profile log-linear from 1000 m at the surface
+to 10 m at 20 km, with turbulons isotropic below the spheroscale. Flux noise
+c = 0.21 (the TWPICE C1 = 0.1 peg). Appends T/qv/qc/qi/p diagnostics.
 
 RUN SANDBOXED — a host OOM here once killed the whole login session. Launch as
 
-    systemd-run --user --scope -p MemoryMax=48G -p MemorySwapMax=2G \
+    systemd-run --user --scope -p MemoryMax=28G -p MemorySwapMax=2G \
         /usr/bin/time -v uv run python -u run_twpice.py
 
-so the kernel kills only this run, never the session. 48G covers the guarded
-8-field peak (42.8 GiB at 2048 x 2048 x 342) plus torch/CUDA overhead. If the
-budget ever tightens, the documented fallback is ny=1024 with
-outer_scale=102400.0 (domain_y must stay an integer multiple of outer_scale),
-which halves every field.
+so the kernel kills only this run, never the session. 28G covers the guarded
+8-field peak (21.4 GiB at 2048 x 1024 x 342) plus torch/CUDA overhead. The
+full-scale option (ny=2048, outer_scale=204800.0, peak 42.8 GiB, MemoryMax=48G)
+fits only when nothing else heavy runs on the 60 GiB host.
 """
 
 import time
@@ -60,8 +60,8 @@ h_max = h_profile.max() + 10 * cp
 started = time.perf_counter()
 simulate(
     h_profile, qt_profile,
-    nx=2048, ny=2048, dx=100.0, dy=100.0,
-    outer_scale=204800.0,
+    nx=2048, ny=1024, dx=100.0, dy=100.0,
+    outer_scale=102400.0,
     spheroscale=spheroscale,
     anisotropy="piecewise_isotropic_below_spheroscale",
     domain_height=DOMAIN_HEIGHT,
