@@ -32,9 +32,9 @@ from steam.simulate import _compute_all_grids, simulate_flux_only
 
 
 DEFAULT_C_VALUES = (0.1, 0.2, 0.4, 0.6)
+DEFAULT_N_FLUX_SUBSTEPS = (1, 2, 4)
 DEFAULT_BOX_SIZES = (2, 4, 8, 16, 32, 64)
-REFERENCE_KAPPA = 0.6
-POSITIVITY_DIAGNOSTIC_C = 0.5
+MAX_CLIP_FRACTION_FOR_FIT = 0.02
 
 
 def _csv_numbers(text: str, cast=float) -> tuple:
@@ -127,6 +127,7 @@ def fit_kappa(c_values: np.ndarray, c1_values: np.ndarray):
         "kappa": factor * coefficient,
         "kappa_standard_error": factor * coefficient_se,
         "r_squared": r_squared,
+        "n_realizations": len(y),
         "fitted_c1": fitted.tolist(),
     }
 
@@ -156,42 +157,53 @@ def _git_revision(repo: Path) -> str:
 
 def make_plot(summary: dict, path: Path):
     results = summary["results"]
-    c = np.asarray([item["c"] for item in results])
-    x = c**2
-    means = np.asarray([item["C1_mean"] for item in results])
-    spread = np.asarray([item["C1_standard_deviation"] for item in results])
+    n_values = sorted({item["n_flux_substeps"] for item in results})
     kappa = summary["kappa_fit"]["kappa"]
     n_realizations = len(results[0]["realizations"])
 
-    fig, ax = plt.subplots(figsize=(5.6, 4.4), constrained_layout=True)
-    for item in results:
-        x_i = item["c"] ** 2
-        ax.scatter(
-            np.full(len(item["realizations"]), x_i),
-            [run["C1"] for run in item["realizations"]],
-            s=22, color="0.55", alpha=0.55, zorder=2,
-        )
-    ax.errorbar(
-        x, means, yerr=spread, fmt="o", color="#1764ab", capsize=3,
-        label=rf"STEAM mean $\pm$ 1 s.d. ($N={n_realizations}$)", zorder=4,
+    fig, axes = plt.subplots(
+        1, len(n_values), figsize=(12.0, 3.8), sharex=True, sharey=True,
+        constrained_layout=True,
+    )
+    axes = np.atleast_1d(axes)
+    colors = ("#1764ab", "#2a9d8f", "#e76f51")
+    x_line = np.geomspace(
+        min(item["c_squared"] for item in results) / 1.25,
+        max(item["c_squared"] for item in results) * 1.25,
+        300,
     )
 
-    x_line = np.geomspace(x.min() / 1.25, x.max() * 1.25, 300)
-    ax.plot(
-        x_line, kappa * x_line / (2 * np.log(2)), color="#d1495b", lw=2,
-        label=rf"through-origin fit: $\kappa={kappa:.3f}$",
-    )
-    ax.plot(
-        x_line, REFERENCE_KAPPA * x_line / (2 * np.log(2)),
-        color="0.25", lw=1.3, ls="--",
-        label=rf"packing prediction: $\kappa={REFERENCE_KAPPA:.1f}$",
-    )
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel(r"flux innovation variance scale $c^2$")
-    ax.set_ylabel(r"realized $C_1 = K(2)/2$")
-    ax.grid(True, which="both", alpha=0.22)
-    ax.legend(frameon=False, fontsize=9)
+    for ax, n_substeps, color in zip(axes, n_values, colors):
+        selected = [
+            item for item in results if item["n_flux_substeps"] == n_substeps
+        ]
+        for item in selected:
+            x_i = item["c_squared"]
+            ax.scatter(
+                np.full(len(item["realizations"]), x_i),
+                [run["C1"] for run in item["realizations"]],
+                s=20, color=color, alpha=0.32, zorder=2,
+            )
+        ax.errorbar(
+            [item["c_squared"] for item in selected],
+            [item["C1_mean"] for item in selected],
+            yerr=[item["C1_standard_deviation"] for item in selected],
+            fmt="o", color=color, capsize=3,
+            label=rf"mean $\pm$ 1 s.d. ($N={n_realizations}$)", zorder=4,
+        )
+        ax.plot(
+            x_line, kappa * x_line / (2 * np.log(2)),
+            color="0.15", lw=1.8,
+            label=rf"low-clip fit: $\kappa={kappa:.3f}$",
+        )
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_title(rf"$n_{{\mathrm{{sub}}}}={n_substeps}$")
+        ax.set_xlabel(r"flux innovation variance scale $c^2$")
+        ax.grid(True, which="both", alpha=0.22)
+        ax.legend(frameon=False, fontsize=8)
+
+    axes[0].set_ylabel(r"realized $C_1 = K(2)/2$")
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path)
     plt.close(fig)
@@ -201,6 +213,10 @@ def parse_args():
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--c-values", default=",".join(map(str, DEFAULT_C_VALUES)))
+    parser.add_argument(
+        "--n-flux-substeps",
+        default=",".join(map(str, DEFAULT_N_FLUX_SUBSTEPS)),
+    )
     parser.add_argument("--realizations", type=int, default=4)
     parser.add_argument("--nx", type=int, default=512)
     parser.add_argument("--ny", type=int, default=512)
@@ -217,11 +233,14 @@ def parse_args():
 def main():
     args = parse_args()
     c_values = _csv_numbers(args.c_values, float)
+    n_flux_substeps_values = _csv_numbers(args.n_flux_substeps, int)
     box_sizes = _csv_numbers(args.box_sizes, int)
     if args.realizations < 2:
         raise ValueError("at least two realizations are required to measure spread")
     if len(box_sizes) < 5:
         raise ValueError("use at least five box sizes to span four scaling octaves")
+    if any(n < 1 for n in n_flux_substeps_values):
+        raise ValueError("n_flux_substeps values must be positive integers")
 
     grids = build_root_grids(
         args.nx, args.ny, args.domain_height,
@@ -233,107 +252,105 @@ def main():
     if any(final_shape[axis] % box for box in box_sizes for axis in (0, 1)):
         raise ValueError(f"box sizes {box_sizes} do not divide final shape {final_shape}")
 
-    n_calibration_runs = len(c_values) * args.realizations
-    seed_sequences = np.random.SeedSequence(args.base_seed).spawn(
-        n_calibration_runs + args.realizations,
-    )
-    seeds = [int(seq.generate_state(1, dtype=np.uint64)[0]) for seq in seed_sequences]
+    seed_sequences = np.random.SeedSequence(args.base_seed).spawn(args.realizations)
+    seeds = [
+        int(seq.generate_state(1, dtype=np.uint64)[0]) for seq in seed_sequences
+    ]
 
     started = time.perf_counter()
     results = []
     all_c = []
     all_c1 = []
-    run_index = 0
-    for c in c_values:
-        realizations = []
-        for realization in range(args.realizations):
-            seed = seeds[run_index]
-            run_index += 1
-            run_started = time.perf_counter()
-            flux, clip = simulate_flux_only(
-                grids,
-                seed=seed,
-                flux_noise_scale=c,
-                min_distance_to_ground=1,
-                zero_bottom=True,
-                zero_top=True,
-            )
-            estimate = estimate_c1(flux, box_sizes)
-            runtime = time.perf_counter() - run_started
-            run = {
-                "realization": realization,
-                "seed": seed,
-                **estimate,
-                "clip_fraction": clip["clip_fraction"],
-                "final_zero_fraction": clip["final_zero_fraction"],
-                "clip_steps": clip["steps"],
-                "runtime_seconds": runtime,
-                "flux_horizontal_mean_max_abs_error": float(
-                    np.max(np.abs(flux.mean(axis=(0, 1)) - 1.0))
+    all_clip_fractions = []
+    for n_substeps in n_flux_substeps_values:
+        for c in c_values:
+            realizations = []
+            for realization, seed in enumerate(seeds):
+                run_started = time.perf_counter()
+                flux, clip = simulate_flux_only(
+                    grids,
+                    seed=seed,
+                    flux_noise_scale=c,
+                    n_flux_substeps=n_substeps,
+                    min_distance_to_ground=1,
+                    zero_bottom=True,
+                    zero_top=True,
+                )
+                estimate = estimate_c1(flux, box_sizes)
+                runtime = time.perf_counter() - run_started
+                run = {
+                    "realization": realization,
+                    "seed": seed,
+                    **estimate,
+                    "clip_fraction": clip["clip_fraction"],
+                    "final_zero_fraction": clip["final_zero_fraction"],
+                    "clip_steps": clip["steps"],
+                    "runtime_seconds": runtime,
+                    "flux_horizontal_mean_max_abs_error": float(
+                        np.max(np.abs(flux.mean(axis=(0, 1)) - 1.0))
+                    ),
+                }
+                realizations.append(run)
+                all_c.append(c)
+                all_c1.append(estimate["C1"])
+                all_clip_fractions.append(clip["clip_fraction"])
+                print(
+                    f"n={n_substeps} c={c:.2f} "
+                    f"realization={realization + 1}/{args.realizations} "
+                    f"C1={estimate['C1']:.5f} "
+                    f"clip={clip['clip_fraction']:.3%} "
+                    f"zero={clip['final_zero_fraction']:.3%} "
+                    f"time={runtime:.1f}s",
+                    flush=True,
+                )
+
+            c1 = np.asarray([run["C1"] for run in realizations])
+            clip_fractions = np.asarray([
+                run["clip_fraction"] for run in realizations
+            ])
+            final_zero_fractions = np.asarray([
+                run["final_zero_fraction"] for run in realizations
+            ])
+            results.append({
+                "n_flux_substeps": n_substeps,
+                "c": c,
+                "c_squared": c**2,
+                "C1_mean": float(c1.mean()),
+                "C1_standard_deviation": float(c1.std(ddof=1)),
+                "C1_min": float(c1.min()),
+                "C1_max": float(c1.max()),
+                "effective_kappa_from_mean_C1": float(
+                    2.0 * math.log(2.0) * c1.mean() / c**2
                 ),
-            }
-            realizations.append(run)
-            all_c.append(c)
-            all_c1.append(estimate["C1"])
-            print(
-                f"c={c:.2f} realization={realization + 1}/{args.realizations} "
-                f"C1={estimate['C1']:.5f} clip={clip['clip_fraction']:.3%} "
-                f"time={runtime:.1f}s",
-                flush=True,
-            )
+                "clip_fraction_mean": float(clip_fractions.mean()),
+                "clip_fraction_standard_deviation": float(
+                    clip_fractions.std(ddof=1)
+                ),
+                "final_zero_fraction_mean": float(final_zero_fractions.mean()),
+                "final_zero_fraction_standard_deviation": float(
+                    final_zero_fractions.std(ddof=1)
+                ),
+                "realizations": realizations,
+            })
 
-        c1 = np.asarray([run["C1"] for run in realizations])
-        clip_fractions = np.asarray([run["clip_fraction"] for run in realizations])
-        results.append({
-            "c": c,
-            "c_squared": c**2,
-            "C1_mean": float(c1.mean()),
-            "C1_standard_deviation": float(c1.std(ddof=1)),
-            "C1_min": float(c1.min()),
-            "C1_max": float(c1.max()),
-            "effective_kappa_from_mean_C1": float(
-                2.0 * math.log(2.0) * c1.mean() / c**2
-            ),
-            "clip_fraction_mean": float(clip_fractions.mean()),
-            "clip_fraction_standard_deviation": float(clip_fractions.std(ddof=1)),
-            "realizations": realizations,
-        })
+    all_c = np.asarray(all_c)
+    all_c1 = np.asarray(all_c1)
+    all_clip_fractions = np.asarray(all_clip_fractions)
+    low_clip = all_clip_fractions < MAX_CLIP_FRACTION_FOR_FIT
+    kappa = fit_kappa(all_c[low_clip], all_c1[low_clip])
+    kappa["maximum_clip_fraction"] = MAX_CLIP_FRACTION_FOR_FIT
+    kappa["excluded_realizations"] = int(np.count_nonzero(~low_clip))
 
-    kappa = fit_kappa(np.asarray(all_c), np.asarray(all_c1))
-    mean_c1 = np.asarray([item["C1_mean"] for item in results])
-    collapse = fit_collapse_exponent(np.asarray(c_values), mean_c1)
-
-    positivity_runs = []
-    for realization in range(args.realizations):
-        seed = seeds[n_calibration_runs + realization]
-        run_started = time.perf_counter()
-        _flux, clip = simulate_flux_only(
-            grids,
-            seed=seed,
-            flux_noise_scale=POSITIVITY_DIAGNOSTIC_C,
-            min_distance_to_ground=1,
-            zero_bottom=True,
-            zero_top=True,
-        )
-        positivity_runs.append({
-            "realization": realization,
-            "seed": seed,
-            "clip_fraction": clip["clip_fraction"],
-            "final_zero_fraction": clip["final_zero_fraction"],
-            "clip_steps": clip["steps"],
-            "runtime_seconds": time.perf_counter() - run_started,
-        })
-        print(
-            f"c={POSITIVITY_DIAGNOSTIC_C:.2f} positivity diagnostic "
-            f"{realization + 1}/{args.realizations} "
-            f"clip={clip['clip_fraction']:.3%}",
-            flush=True,
+    collapse = {}
+    for n_substeps in n_flux_substeps_values:
+        selected = [
+            item for item in results if item["n_flux_substeps"] == n_substeps
+        ]
+        collapse[str(n_substeps)] = fit_collapse_exponent(
+            np.asarray([item["c"] for item in selected]),
+            np.asarray([item["C1_mean"] for item in selected]),
         )
 
-    positivity_clip = np.asarray([run["clip_fraction"] for run in positivity_runs])
-    positivity_final_zero = np.asarray(
-        [run["final_zero_fraction"] for run in positivity_runs]
-    )
     total_runtime = time.perf_counter() - started
 
     model_repo = Path(__file__).resolve().parents[2] / "turbulon-model"
@@ -349,6 +366,14 @@ def main():
             ),
             "box_sizes": list(box_sizes),
             "scaling_octaves": math.log2(max(box_sizes) / min(box_sizes)),
+            "clip_fraction_definition": (
+                "Pre-clip negative point-updates divided by all point-updates "
+                "across dyadic classes, substeps, and realizations."
+            ),
+            "kappa_fit_selection": (
+                f"Individual realizations with clip fraction < "
+                f"{MAX_CLIP_FRACTION_FOR_FIT:.0%}."
+            ),
         },
         "grid": {
             "final_shape": final_shape,
@@ -370,24 +395,9 @@ def main():
             "cuda_device": gpu_name,
             "total_runtime_seconds": total_runtime,
         },
-        "reference_kappa": REFERENCE_KAPPA,
         "results": results,
         "kappa_fit": kappa,
-        "collapse_loglog_fit": collapse,
-        "positivity_diagnostic": {
-            "c": POSITIVITY_DIAGNOSTIC_C,
-            "fraction_definition": (
-                "Number of pre-clip negative point-updates divided by the total "
-                "number of point-updates across all dyadic classes."
-            ),
-            "clip_fraction_mean": float(positivity_clip.mean()),
-            "clip_fraction_standard_deviation": float(positivity_clip.std(ddof=1)),
-            "final_zero_fraction_mean": float(positivity_final_zero.mean()),
-            "final_zero_fraction_standard_deviation": float(
-                positivity_final_zero.std(ddof=1)
-            ),
-            "realizations": positivity_runs,
-        },
+        "collapse_loglog_fit_by_n_flux_substeps": collapse,
     }
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -398,10 +408,11 @@ def main():
         handle.write("\n")
     make_plot(summary, figure_path)
     print(f"kappa={kappa['kappa']:.5f} +/- {kappa['kappa_standard_error']:.5f}")
-    print(
-        "collapse exponent on c^2="
-        f"{collapse['exponent_on_c_squared']:.4f}, R^2={collapse['r_squared']:.5f}"
-    )
+    for n_substeps, fit in collapse.items():
+        print(
+            f"n={n_substeps} collapse exponent on c^2="
+            f"{fit['exponent_on_c_squared']:.4f}, R^2={fit['r_squared']:.5f}"
+        )
     print(f"wrote {json_path}")
     print(f"wrote {figure_path}")
 
