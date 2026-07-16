@@ -105,14 +105,20 @@ fig.savefig("figs/fluctuation_functions.png")
 plt.close(fig)
 
 # ── (d) qt' cross-section and column condensate image pairs ─────────────────
-extent_km = [0, 204.8, 0, 204.8]
+# Extents from the array shapes (dx = 100 m): STEAM is 204.8 x 102.4 km,
+# SAM 204.8 x 204.8 km.
+
+
+def extent_km(a):
+    return [0, a.shape[0] * DX / 1000, 0, a.shape[1] * DX / 1000]
+
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 4.9))
 limit = np.percentile(np.abs(np.concatenate([
     steam["qt_slice"].ravel(), sam["qt_slice"].ravel()])), 99.5)
 for ax, d, label in [(axes[0], steam, "STEAM"), (axes[1], sam, "SAM")]:
     im = ax.imshow(d["qt_slice"].T * 1000, cmap="BrBG", vmin=-limit * 1000,
-                   vmax=limit * 1000, origin="lower", extent=extent_km)
+                   vmax=limit * 1000, origin="lower", extent=extent_km(d["qt_slice"]))
     ax.set(title=f"{label}  $q_t'$  at z $\\approx$ {float(d['qt_slice_z']) / 1000:.1f} km",
            xlabel="x [km]")
 axes[0].set_ylabel("y [km]")
@@ -125,7 +131,8 @@ vmax = np.percentile(np.concatenate([
     steam["column_condensate"].ravel(), sam["column_condensate"].ravel()]), 99.5)
 for ax, d, label in [(axes[0], steam, "STEAM"), (axes[1], sam, "SAM")]:
     im = ax.imshow(d["column_condensate"].T * 1000, cmap="Blues", vmin=0,
-                   vmax=vmax * 1000, origin="lower", extent=extent_km)
+                   vmax=vmax * 1000, origin="lower",
+                   extent=extent_km(d["column_condensate"]))
     ax.set(title=f"{label}  column condensate", xlabel="x [km]")
 axes[0].set_ylabel("y [km]")
 fig.colorbar(im, ax=axes, label=r"$\int q_{cond}\,dz$ [g/kg $\cdot$ m]", shrink=0.85)
