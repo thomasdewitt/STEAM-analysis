@@ -63,11 +63,17 @@ colors = plt.cm.tab10(np.linspace(0, 1, 10))
 fig, axes = plt.subplots(1, 3, figsize=(10.5, 4.8), sharey=True)
 for ax, (key, _, label) in zip(axes, QUANTITIES):
     ensemble = np.array([host[m][key] for m in models])
-    ens_mean = np.nanmean(ensemble, axis=0)
-    spread = ensemble - ens_mean
-    ax.fill_betweenx(Z / 1000, np.nanmin(spread, axis=0),
-                     np.nanmax(spread, axis=0), color="#D8D4CE", alpha=0.8,
-                     label="inter-LES spread", lw=0)
+    # Signed pairwise host-host differences (i != j): the apples-to-apples
+    # yardstick for the pairwise STEAM-minus-host deltas.
+    n = len(models)
+    pairs = np.array([ensemble[a] - ensemble[b]
+                      for a in range(n) for b in range(n) if a != b])
+    ax.fill_betweenx(Z / 1000, np.nanmin(pairs, axis=0),
+                     np.nanmax(pairs, axis=0), color="#E9E6E1",
+                     label="LES$-$LES full range", lw=0)
+    ax.fill_betweenx(Z / 1000, np.nanpercentile(pairs, 25, axis=0),
+                     np.nanpercentile(pairs, 75, axis=0), color="#CFCAC2",
+                     label="LES$-$LES 25$-$75%", lw=0)
     for m, c in zip(models, colors):
         ax.plot(steam[m][key] - host[m][key], Z / 1000, color=c, lw=1.2,
                 label=m)
