@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Reduce SAM-TWPICE (final snapshot) and the STEAM run to small stat caches.
+"""Reduce SAM-TWPICE (final snapshot) and the STEAM runs to small stat caches.
 
-Writes sam_stats.npz and steam_stats.npz: per-level mean/variance/skewness of
-h and qt, cloud fraction (condensate > 0.01 g/kg), Haar fluctuation functions
-(orders 1 and 2) at three representative levels, one mid-troposphere qt' slice,
-and the column-integrated condensate.
+Writes <tag>_stats.npz: per-level mean/variance/skewness of h and qt, cloud
+fraction (condensate > 0.01 g/kg), separate qc/qi mean profiles, Haar
+fluctuation functions (orders 1 and 2) at three representative levels, 1D PDFs
+of h and qt at 4 km and 10 km (full-data-range bins -- no percentile capping,
+which fakes a tail cliff), one mid-troposphere qt' slice, and the
+column-integrated condensate.
 
 SAM 3D fields are float32 (MSE float64 on disk); every K-scale reduction uses
 a float64 accumulator (see CLAUDE.md gotcha).
+
+Usage: python compute_stats.py [sam] [steam] [steam_ls10]
+       (no args = all three)
 """
+
+import sys
 
 import netCDF4
 import numpy as np
@@ -19,6 +26,8 @@ from steam.constants import specific_heat_dry_air as cp
 SAM = "/run/media/thomas/Expansion/hydrodynamic-model-output/SAM-TWPICE"
 STAMP = "0000003450"  # final snapshot (timestep*2s; day 20 + 1.9 h)
 LEVELS_M = (1500.0, 5000.0, 9000.0)  # boundary layer / mid / upper troposphere
+PDF_LEVELS_M = (4000.0, 10000.0)
+PDF_BINS = 200
 CLOUD_KGKG = 0.01e-3  # condensate threshold, 0.01 g/kg
 XSECT_M = 5000.0
 
@@ -54,10 +63,26 @@ def fluctuations(field, z, mean):
     return out
 
 
-def reduce_fields(h, qt, cond, z, dz, tag):
-    """All stats for one model; h, qt, cond in (x, y, z), SI units."""
+def level_pdfs(field, z):
+    """Histogram (density) over the full data range at PDF_LEVELS_M."""
+    out = {}
+    for target in PDF_LEVELS_M:
+        iz = int(np.argmin(np.abs(z - target)))
+        col = field[:, :, iz].astype(np.float64, copy=False).ravel()
+        density, edges = np.histogram(col, bins=PDF_BINS, density=True)
+        out[target] = (z[iz], edges, density)
+    return out
+
+
+def reduce_fields(h, qt, qc, qi, z, dz, tag):
+    """All stats for one model; h, qt, qc, qi in (x, y, z), SI units."""
+    cond = qc + qi
     h_mean, h_var, h_skew = profile_stats(h)
     qt_mean, qt_var, qt_skew = profile_stats(qt)
+    qc_mean = np.array([qc[:, :, iz].mean(dtype=np.float64)
+                        for iz in range(z.size)])
+    qi_mean = np.array([qi[:, :, iz].mean(dtype=np.float64)
+                        for iz in range(z.size)])
     cloud_fraction = np.array([
         np.mean(cond[:, :, iz] > CLOUD_KGKG, dtype=np.float64)
         for iz in range(z.size)
@@ -67,22 +92,29 @@ def reduce_fields(h, qt, cond, z, dz, tag):
         column += cond[:, :, iz].astype(np.float64) * dz[iz]
 
     iz_x = int(np.argmin(np.abs(z - XSECT_M)))
-    qt_slice = qt[:, :, iz_x].astype(np.float64) - qt_mean[iz_x]
+    qt_mean_x = qt[:, :, iz_x].astype(np.float64).mean(dtype=np.float64)
+    qt_slice = qt[:, :, iz_x].astype(np.float64) - qt_mean_x
 
-    fluct = {}
+    extras = {}
     for name, field, mean in [("h", h, h_mean), ("qt", qt, qt_mean)]:
         for target, (z_used, lags, F) in fluctuations(field, z, mean).items():
-            fluct[f"fluct_{name}_{target:.0f}_z"] = z_used
-            fluct[f"fluct_{name}_{target:.0f}_lags"] = lags
-            fluct[f"fluct_{name}_{target:.0f}_F"] = F
+            extras[f"fluct_{name}_{target:.0f}_z"] = z_used
+            extras[f"fluct_{name}_{target:.0f}_lags"] = lags
+            extras[f"fluct_{name}_{target:.0f}_F"] = F
+        for target, (z_used, edges, density) in level_pdfs(field, z).items():
+            extras[f"pdf_{name}_{target:.0f}_z"] = z_used
+            extras[f"pdf_{name}_{target:.0f}_edges"] = edges
+            extras[f"pdf_{name}_{target:.0f}_density"] = density
 
     np.savez(
         f"{tag}_stats.npz",
         z=z, h_mean=h_mean, h_var=h_var, h_skew=h_skew,
         qt_mean=qt_mean, qt_var=qt_var, qt_skew=qt_skew,
+        qc_mean=qc_mean, qi_mean=qi_mean,
         cloud_fraction=cloud_fraction, column_condensate=column,
         qt_slice=qt_slice, qt_slice_z=z[iz_x], levels=np.array(LEVELS_M),
-        **fluct,
+        pdf_levels=np.array(PDF_LEVELS_M),
+        **extras,
     )
     print(f"wrote {tag}_stats.npz")
 
@@ -101,27 +133,33 @@ def sam():
         ds.close()
         return field  # g/kg -> kg/kg
 
-    cond = read("QC")
-    cond += read("QI")
+    qc = read("QC")
+    qi = read("QI")
     qt = read("QV")
-    qt += cond
+    qt += qc + qi
 
     dz = np.gradient(z)
-    reduce_fields(h, qt, cond, z, dz, "sam")
+    reduce_fields(h, qt, qc, qi, z, dz, "sam")
 
 
-def steam():
-    ds = netCDF4.Dataset("steam_twpice.nc")
+def steam(path="steam_twpice.nc", tag="steam"):
+    ds = netCDF4.Dataset(path)
     ds.set_auto_mask(False)
     z = ds.variables["z"][:].astype(np.float64)
     dz = ds.variables["dz"][:].astype(np.float64)
     h = ds.variables["h"][:]
     qt = ds.variables["qt"][:]
-    cond = ds.variables["qc"][:] + ds.variables["qi"][:]
+    qc = ds.variables["qc"][:]
+    qi = ds.variables["qi"][:]
     ds.close()
-    reduce_fields(h, qt, cond, z, dz, "steam")
+    reduce_fields(h, qt, qc, qi, z, dz, tag)
 
 
 if __name__ == "__main__":
-    sam()
-    steam()
+    wanted = sys.argv[1:] or ["sam", "steam", "steam_ls10"]
+    if "sam" in wanted:
+        sam()
+    if "steam" in wanted:
+        steam()
+    if "steam_ls10" in wanted:
+        steam("steam_twpice_ls10.nc", "steam_ls10")
