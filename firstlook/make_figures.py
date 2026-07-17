@@ -29,6 +29,7 @@ CASES = [  # (npz tag, label, color)
     ("sam", "SAM", "#C2410C"),
     ("steam", "STEAM ls 1000$\\to$10 m", "#1268A3"),
     ("steam_ls10", "STEAM ls 10 m", "#3FA34D"),
+    ("steam_ls3000_1", "STEAM ls 3000$\\to$1 m", "#7C3AAD"),
 ]
 data = [(np.load(f"{tag}_stats.npz"), label, color)
         for tag, label, color in CASES]
@@ -148,7 +149,7 @@ def extent_km(a):
     return [0, a.shape[0] * DX / 1000, 0, a.shape[1] * DX / 1000]
 
 
-fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.4))
+fig, axes = plt.subplots(1, len(data), figsize=(4.2 * len(data), 4.4))
 limit = np.percentile(np.abs(np.concatenate(
     [d["qt_slice"].ravel() for d, _, _ in data])), 99.5)
 for ax, (d, label, _) in zip(axes, data):
@@ -161,7 +162,7 @@ fig.colorbar(im, ax=axes, label="$q_t'$ [g/kg]", shrink=0.8)
 fig.savefig("figs/qt_cross_section.png", bbox_inches="tight")
 plt.close(fig)
 
-fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.4))
+fig, axes = plt.subplots(1, len(data), figsize=(4.2 * len(data), 4.4))
 vmax = np.percentile(np.concatenate(
     [d["column_condensate"].ravel() for d, _, _ in data]), 99.5)
 for ax, (d, label, _) in zip(axes, data):

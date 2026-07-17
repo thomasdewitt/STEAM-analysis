@@ -11,8 +11,8 @@ column-integrated condensate.
 SAM 3D fields are float32 (MSE float64 on disk); every K-scale reduction uses
 a float64 accumulator (see CLAUDE.md gotcha).
 
-Usage: python compute_stats.py [sam] [steam] [steam_ls10]
-       (no args = all three)
+Usage: python compute_stats.py [sam] [steam] [steam_ls10] [steam_ls3000_1]
+       (no args = all cases)
 """
 
 import sys
@@ -156,10 +156,12 @@ def steam(path="steam_twpice.nc", tag="steam"):
 
 
 if __name__ == "__main__":
-    wanted = sys.argv[1:] or ["sam", "steam", "steam_ls10"]
+    wanted = sys.argv[1:] or ["sam", "steam", "steam_ls10", "steam_ls3000_1"]
     if "sam" in wanted:
         sam()
     if "steam" in wanted:
         steam()
     if "steam_ls10" in wanted:
         steam("steam_twpice_ls10.nc", "steam_ls10")
+    if "steam_ls3000_1" in wanted:
+        steam("steam_twpice_ls3000_1.nc", "steam_ls3000_1")
