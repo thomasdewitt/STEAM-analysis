@@ -54,7 +54,7 @@ h_max = h_profile.max() + 10 * cp
 started = time.perf_counter()
 simulate(
     h_profile, qt_profile,
-    nx=1024, ny=1024, dx=100.0, dy=100.0,
+    nx=2048, ny=512, dx=100.0, dy=100.0,
     outer_scale=102400.0,
     spheroscale=spheroscale,
     anisotropy="piecewise_isotropic_below_spheroscale",

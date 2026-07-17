@@ -27,7 +27,8 @@ from steam.constants import specific_heat_dry_air as cp
 
 SAM = "/run/media/thomas/Expansion/hydrodynamic-model-output/SAM-TWPICE"
 STAMP = "0000003450"
-BANDS_M = ((0.0, 5000.0), (5000.0, 10000.0), (10000.0, 15000.0))
+BANDS_M = ((0.0, 5000.0), (5000.0, 10000.0), (10000.0, 15000.0),
+           (0.0, 15000.0))
 
 scaleinvariance.set_backend("torch")
 scaleinvariance.set_device("cuda")
@@ -134,12 +135,12 @@ def figure():
         ("sam", "SAM", "#C2410C"),
         ("steam", "STEAM ls 1000$\\to$10 m", "#1268A3"),
         ("steam_ls10", "STEAM ls 10 m", "#3FA34D"),
-        ("steam_ls3000_1", "STEAM ls 3000$\\to$1 m", "#7C3AAD"),
+        ("steam_ls3000_1", "STEAM ls 3000 m (<4 km) $\\to$ 1 m", "#7C3AAD"),
     ]
     data = [(np.load(f"vertical_fluct_{tag}.npz"), label, color)
             for tag, label, color in cases]
 
-    fig, axes = plt.subplots(2, 3, figsize=(10.5, 6.4))
+    fig, axes = plt.subplots(2, len(BANDS_M), figsize=(3.5 * len(BANDS_M), 6.4))
     for row, name, symbol in [(0, "qt", "q_t"), (1, "h", "h")]:
         for col, (z_lo, z_hi) in enumerate(BANDS_M):
             ax = axes[row, col]

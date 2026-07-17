@@ -29,7 +29,7 @@ CASES = [  # (npz tag, label, color)
     ("sam", "SAM", "#C2410C"),
     ("steam", "STEAM ls 1000$\\to$10 m", "#1268A3"),
     ("steam_ls10", "STEAM ls 10 m", "#3FA34D"),
-    ("steam_ls3000_1", "STEAM ls 3000$\\to$1 m", "#7C3AAD"),
+    ("steam_ls3000_1", "STEAM ls 3000 m (<4 km) $\\to$ 1 m", "#7C3AAD"),
 ]
 data = [(np.load(f"{tag}_stats.npz"), label, color)
         for tag, label, color in CASES]
@@ -54,6 +54,20 @@ for ax in axes:
 axes[0].legend(fontsize=7)
 fig.tight_layout()
 fig.savefig("figs/cloud_fraction.png")
+plt.close(fig)
+
+# ── (a2) mean profiles — sanity check that STEAM preserves the input state ──
+fig, axes = plt.subplots(1, 2, figsize=(6.4, 4.6), sharey=True)
+for d, label, color in data:
+    axes[0].plot(d["h_mean"] / 1004.0, zkm(d), color=color, lw=1.4, label=label)
+    axes[1].plot(d["qt_mean"] * 1000, zkm(d), color=color, lw=1.4)
+axes[0].set(xlabel="mean $h/c_p$ [K]", ylabel="z [km]", ylim=(0, Z_TOP_KM))
+axes[1].set(xlabel="mean $q_t$ [g/kg]")
+for ax in axes:
+    ax.grid(True, alpha=0.6)
+axes[0].legend(fontsize=7)
+fig.tight_layout()
+fig.savefig("figs/mean_profiles.png")
 plt.close(fig)
 
 # ── (b) variance and skewness profiles ───────────────────────────────────────

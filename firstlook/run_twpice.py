@@ -15,7 +15,7 @@ RUN SANDBOXED — a host OOM here once killed the whole login session. Launch as
 
 so the kernel kills only this run, never the session. 28G covers the guarded
 8-field peak (21.4 GiB at 2048 x 1024 x 342) plus torch/CUDA overhead. The
-full-scale option (ny=2048, outer_scale=204800.0, peak 42.8 GiB, MemoryMax=48G)
+full-scale option (ny=2048, outer_scale=102400.0, peak 42.8 GiB, MemoryMax=48G)
 fits only when nothing else heavy runs on the 60 GiB host.
 """
 
@@ -60,7 +60,7 @@ h_max = h_profile.max() + 10 * cp
 started = time.perf_counter()
 simulate(
     h_profile, qt_profile,
-    nx=2048, ny=1024, dx=100.0, dy=100.0,
+    nx=2048, ny=512, dx=100.0, dy=100.0,
     outer_scale=102400.0,
     spheroscale=spheroscale,
     anisotropy="piecewise_isotropic_below_spheroscale",

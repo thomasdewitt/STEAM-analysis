@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Steep-spheroscale variant of the canonical TWPICE STEAM run.
+"""Large-low-level-spheroscale variant of the canonical TWPICE STEAM run.
 
-Identical to run_twpice.py except the spheroscale profile: log-linear from
-3000 m at the surface to 1 m at the 20 km top (one decade per ~5.7 km;
-~440 m at 5 km, ~65 m at 10 km, ~9.7 m at 15 km). Steeper decay than the
-canonical 1000 -> 10 m case, with a larger boundary-layer spheroscale.
-
-Grid follows the ls10 lesson: the fine spheroscale aloft deepens the finest
-z-grid, so run at 1024 x 1024 (one outer-scale tile per direction) to stay
-inside host memory.
+Identical to run_twpice.py except the spheroscale profile: constant 3000 m
+from the surface to 4 km, then log-linear down to 1 m at the 20 km top
+(one decade per ~2 km above the break: ~1090 m at 6 km, ~130 m at 10 km,
+~4 m at 17 km). Motivated by cloudyview renders wanting much larger
+low-level spheroscale.
 
 RUN SANDBOXED (see run_twpice.py):
 
@@ -27,8 +24,9 @@ from steam.constants import specific_heat_dry_air as cp
 
 PROFILE_DZ = 50.0
 DOMAIN_HEIGHT = 20000.0
-SPHEROSCALE_SURFACE = 3000.0
-SPHEROSCALE_TOP = 1.0
+SPHEROSCALE_LOW = 3000.0     # constant below the breakpoint
+BREAK_HEIGHT = 4000.0        # top of the constant layer
+SPHEROSCALE_TOP = 1.0        # at the domain top (log-linear above the break)
 SEED = 20260714
 OUTPUT = "steam_twpice_ls3000_1.nc"
 
@@ -43,8 +41,11 @@ z_uniform = np.arange(0.0, DOMAIN_HEIGHT + PROFILE_DZ, PROFILE_DZ)
 h_profile = np.interp(z_uniform, z_sam, h_sam)
 qt_profile = np.interp(z_uniform, z_sam, qt_sam)
 
-spheroscale = SPHEROSCALE_SURFACE * (
-    SPHEROSCALE_TOP / SPHEROSCALE_SURFACE) ** (z_uniform / DOMAIN_HEIGHT)
+# Constant SPHEROSCALE_LOW below BREAK_HEIGHT; log-linear down to
+# SPHEROSCALE_TOP at the domain top above it.
+above = np.clip(
+    (z_uniform - BREAK_HEIGHT) / (DOMAIN_HEIGHT - BREAK_HEIGHT), 0.0, 1.0)
+spheroscale = SPHEROSCALE_LOW * (SPHEROSCALE_TOP / SPHEROSCALE_LOW) ** above
 
 h_min = h_profile.min() - 10 * cp
 h_max = h_profile.max() + 10 * cp
@@ -52,7 +53,7 @@ h_max = h_profile.max() + 10 * cp
 started = time.perf_counter()
 simulate(
     h_profile, qt_profile,
-    nx=1024, ny=1024, dx=100.0, dy=100.0,
+    nx=2048, ny=512, dx=100.0, dy=100.0,
     outer_scale=102400.0,
     spheroscale=spheroscale,
     anisotropy="piecewise_isotropic_below_spheroscale",
