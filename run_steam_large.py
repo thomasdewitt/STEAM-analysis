@@ -21,7 +21,10 @@ import numpy as np
 # H_h at call time; steam/__init__ rebinds the submodule name, so fetch the
 # real module object.
 import importlib
-importlib.import_module("steam.simulate").H_h = 0.45
+_steam_simulate = importlib.import_module("steam.simulate")
+_steam_simulate.H_h = 0.45
+# Same C1 = 0.05 override as run_steam.py (calibration C1 = 1.674 c^1.8).
+_steam_simulate.FLUX_SCALE = (0.05 / 1.674) ** (1 / 1.8)
 
 from steam.simulate import simulate
 from steam.thermodynamics import compute_diagnostics
