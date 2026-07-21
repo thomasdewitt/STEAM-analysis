@@ -18,18 +18,17 @@ Run in order:
    - `make_pdfs.py` — anomaly PDFs
    - `make_fractal.py` — tau>1 mask correlation dimension + size distributions
 
-## Small-domain ensemble (RCE_small_les300)
+## Exclusions
 
-`small_pipeline.py` — self-contained version for the four small-domain models
-(SAM, CM1, DALES, ICON-LEM). Phases as args (default all):
-`python small_pipeline.py hosts steam figures`. Writes `stats_small/` and the
-`*_small.png` figures.
+MESONH is excluded entirely: its archived 3D `hus` is a documented RCEMIP data
+error (Known RCEMIP Bugs doc on Expansion, Sec. 17). The small-domain
+(RCE_small_les300) analysis was dropped 2026-07-21; size distributions come
+from large-domain STEAM ensembles instead (see paper Sect. 3).
 
 ## Data
 
 `data/` and `runs/` are gitignored. The host originals live on the Expansion
 drive under `hydrodynamic-model-output/RCEMIP/`. Copy the files each adapter in
-`extract_stats.py` / `small_pipeline.py` globs into `data/<model>/`.
+`extract_stats.py` globs into `data/<model>/`.
 
-The `stats/` and `stats_small/` `.npz` are gitignored (regenerate them with the
-pipeline). The `figs/*.png` outputs are committed as the figure record.
+The `stats/` `.npz` are gitignored (regenerate them with the pipeline). The `figs/*.png` outputs are committed as the figure record.

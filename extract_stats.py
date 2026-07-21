@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Extract per-level stats + STEAM input profiles from RCEMIP channel snapshots.
 
-Ten RCE_large300 models, three well-separated snapshots each (see inventory in
-the 2026-07-17 session notes). For each model snapshot this writes
+Nine RCE_large300 models, three well-separated snapshots each (see inventory in
+the 2026-07-17 session notes). MESONH is excluded: its archived 3D hus is a
+documented RCEMIP data error (Known RCEMIP Bugs, Sec. 17 -- "much too small in
+the lower troposphere"; confirmed empirically 2026-07-21). For each model snapshot this writes
 stats/<model>_snap<i>.npz with: native z [m], mean/variance of h and qt per
 level, cloud fraction (qc+qi > 0.01 g/kg), and the STEAM input profile
 (h, qt interpolated to uniform 50 m spacing, surface pressure).
@@ -115,18 +117,6 @@ def scale(i):
     return z, T, qv, qc, qi, P0_DEFAULT
 
 
-def mesonh(i):
-    d = DATA / "mesonh"
-    # MESONH files carry no coordinates; the RCEMIP standard 74-level grid is
-    # identical to SCALE's lev (verified in the inventory).
-    z = read_var(DATA / "scale" / "SCALE_RCE_large300_3D_ta_last25d.nc", "lev")
-    T = read_var(d / "MESONH_RCE_large300_3D_ta.nc", "ta", i)
-    qv = spec_to_mr(read_var(d / "MESONH_RCE_large300_3D_hus.nc", "hus", i))
-    qc = spec_to_mr(read_var(d / "MESONH_RCE_large300_3D_clw.nc", "clw", i))
-    qi = spec_to_mr(read_var(d / "MESONH_RCE_large300_3D_cli.nc", "cli", i))
-    return z, T, qv, qc, qi, P0_DEFAULT
-
-
 def ucla(i):
     d = DATA / "ucla"
     # Dims (time, yt, xt, zt), z LAST; zt[0] = -37 m ghost level -> drop.
@@ -186,7 +176,7 @@ ADAPTERS = {
     "sam": sam, "cm1": cm1,
     "ukmo_casim": ukmo_casim, "ukmo_ra1t": ukmo_ra1t,
     "ukmo_ra1t_nocloud": ukmo_ra1t_nocloud,
-    "mesonh": mesonh, "scale": scale, "ucla": ucla,
+    "scale": scale, "ucla": ucla,
     "icon_lem": icon_lem, "icon_nwp": icon_nwp,
 }
 

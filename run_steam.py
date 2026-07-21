@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run the frozen STEAM config against every RCEMIP channel profile.
 
-One config, deliberately untuned: constant 10 m spheroscale, outer scale
+One config, deliberately untuned: H_h = 0.45, spheroscale decreasing
+linearly from 100 m at the surface to 1 m at the domain top, outer scale
 96 km, channel strip 2048 x 128 at dx = 3 km (6144 x 384 km ~ the RCEMIP
 large-domain geometry; y is a strip axis at 4 outer-scale tiles... x is 64
 tiles, y is 4). Domain top 20 km. One run per model snapshot (seed = snapshot
@@ -22,11 +23,18 @@ from steam.simulate import simulate
 from steam.thermodynamics import compute_diagnostics
 from steam.constants import specific_heat_dry_air as cp
 
+# Override the horizontal Hurst exponent for this production run set.
+# steam.simulate reads its module-level H_h at call time; steam/__init__
+# rebinds the submodule name, so fetch the real module object.
+import importlib
+importlib.import_module("steam.simulate").H_h = 0.45
+
 HERE = Path(__file__).parent
 STATS = HERE / "stats"
 RUNS = HERE / "runs"
 CLOUD_KGKG = 0.01e-3
-SPHEROSCALE = 10.0
+SPHEROSCALE_SURFACE = 100.0
+SPHEROSCALE_TOP = 1.0
 DOMAIN_HEIGHT = 20000.0
 PROFILE_DZ = 50.0
 
@@ -64,7 +72,8 @@ def run_one(model, i):
     RUNS.mkdir(exist_ok=True)
     out_nc = RUNS / f"steam_{model}_snap{i}.nc"
 
-    spheroscale = np.full_like(src["z_profile"], SPHEROSCALE)
+    z = src["z_profile"]
+    spheroscale = SPHEROSCALE_SURFACE + (SPHEROSCALE_TOP - SPHEROSCALE_SURFACE) * z / DOMAIN_HEIGHT
     simulate(
         h_profile, qt_profile,
         nx=2048, ny=128, dx=3000.0, dy=3000.0,
