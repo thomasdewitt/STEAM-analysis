@@ -1,9 +1,10 @@
+data/
+runs/
 *.nc
 *.npz
 *.png
 *.pdf
-*.pyc
 *.log
-*.DS_Store
-
+__pycache__/
+.DS_Store
 .codex
