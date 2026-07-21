@@ -24,7 +24,7 @@ import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
 _steam_simulate.H_h = 0.45
 # Same C1 override as run_steam.py (calibration C1 = 1.674 c^1.8).
-C1_TARGET = 0.01
+C1_TARGET = 0.05
 _steam_simulate.FLUX_SCALE = (C1_TARGET / 1.674) ** (1 / 1.8)
 
 from steam.simulate import simulate
