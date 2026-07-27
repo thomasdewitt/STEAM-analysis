@@ -1,0 +1,40 @@
+diff --git a/steam/simulate.py b/steam/simulate.py
+index 00a773c..c581f81 100755
+--- a/steam/simulate.py
++++ b/steam/simulate.py
+@@ -846,14 +846,19 @@ def cascade_loop(
+             W += grad_h
+             del grad_h
+ 
+-            # Realized norm: normalizing by the realized horizontal mean
+-            # enforces the mean-absolute turbulon amplitude C_k exactly at
+-            # every level and class (self-correcting; no deterministic
+-            # reference, no compounding bias). Structureless levels
+-            # (level mean zero) keep W = 0.
+-            level_mean = _inner_view(W, window).mean(
+-                axis=(0, 1), keepdims=True, dtype=np.float64)
+-            W /= np.where(level_mean > 0, level_mean, 1.0).astype(np.float32)
++            # EXPERIMENT 2026-07-27: JOINT product norm. W and S_k are
++            # correlated (flux big -> deposits big -> gradients big), so
++            # normalizing them separately does not normalize the product;
++            # the correlation grows down-cascade and cancels the k^H_h
++            # ladder. Normalize the PRODUCT W*S_k per level by its mean
++            # absolute value over turbulon centers, enforcing the mean
++            # turbulon amplitude <|A|> = C_k exactly.
++            W *= S_k            # joint pattern W*S_k (sparse at centers)
++            inner = _inner_view(W, window)
++            level_sum = np.abs(inner).sum(axis=(0, 1), dtype=np.float64)
++            level_cnt = np.count_nonzero(inner, axis=(0, 1))
++            level_mean = (level_sum / np.maximum(level_cnt, 1)).astype(np.float32)
++            W /= np.where(level_mean > 0, level_mean, np.float32(1.0))[None, None, :]
+ 
+             # Bound taper, applied AFTER the norm: proximity of one part of
+             # the field to a bound reduces that level's total variance
+@@ -862,7 +867,6 @@ def cascade_loop(
+             del running_sum
+ 
+             W *= C_k_i          # 1D broadcast: mean amplitude C_k(z)
+-            W *= S_k            # signed multiplier noise; W is now A
+ 
+             # Convolve and accumulate (periodic x,y; zero-padded z)
+             perturbation_field += CONVOLVE(W, kernel, device=device)
