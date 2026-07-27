@@ -71,6 +71,9 @@ def steam_stats(path, out_path):
 
 
 def run_one(model, i):
+    if (STATS / f"steam_{model}_snap{i}.npz").exists():
+        print(f"steam {model} snap{i} exists, skipping", flush=True)
+        return
     src = np.load(STATS / f"{model}_snap{i}.npz")
     h_profile = src["h_profile"]
     qt_profile = src["qt_profile"]
@@ -88,7 +91,9 @@ def run_one(model, i):
     out_nc = RUNS / f"steam_{model}_snap{i}.nc"
 
     z = src["z_profile"]
-    spheroscale = SPHEROSCALE_SURFACE + (SPHEROSCALE_TOP - SPHEROSCALE_SURFACE) * z / DOMAIN_HEIGHT
+    # Constant 10 m spheroscale (2026-07-27: switched from the linear
+    # 100 m -> 1 m ramp to match the production squares, Thomas's lean).
+    spheroscale = np.full(z.size, 10.0)
     simulate(
         h_profile, qt_profile,
         nx=2048, ny=128, dx=3000.0, dy=3000.0,
