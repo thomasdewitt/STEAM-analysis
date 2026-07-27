@@ -5,7 +5,7 @@ Thomas's 2026-07-27 spec, for the not-yet-written multifractal appendix:
 
 Figure 1 (normalization test; qt and h only): vertical and horizontal
 mean-absolute Haar (M-hat) fluctuation functions of the nested strip,
-for a mid-level band (4-8 km window centers) and the full domain,
+for a mid-level band (6-8 km window centers) and the full domain,
 alongside the vertical M-hat fluctuation function of the input MEAN
 PROFILE. The crossover of the field's vertical M-hat toward the
 profile's at the vertical outer scale is the direct test of the C_L
@@ -16,10 +16,12 @@ functions of orders q = 1, 2, 3 vs lag, and the moment-scaling
 exponents xi(q) fitted over the nest's scaling range, plus the flux's
 box-mean K(q) (the UM object) from 1D coarse-graining along x.
 
-The Haar fluctuation at lag l is mean(upper half-window) - mean(lower
-half-window); M-hat_q(l) = <|Haar|^q>. Along x the strip is periodic
-(it spans its periodic parent), so windows wrap. Everything is computed
-in z-chunks with float64 accumulators.
+All fluctuation statistics use the CANONICAL estimators from Thomas's
+scaleinvariance package (haar_fluctuation with explicit dyadic lags;
+L1 fluctuation normalization; periodic along x since the strip spans
+its periodic parent). The mid-level band restricts to the 6-8 km slab
+(windows within it). The flux box-mean K(q) keeps the calibration
+estimator for direct comparability with C20.
 
 Writes figs/strip-appx/mhat_normalization.png, kq_fluctuations.png and
 stats/strip_appendix.npz.
@@ -40,7 +42,7 @@ HERE = Path(__file__).parent
 PARENT = (Path(sys.argv[1]) if len(sys.argv) > 1
           else HERE / "runs" / "steam_square_icon_lem_snap0.nc")
 GROUP = sys.argv[2] if len(sys.argv) > 2 else "refinements/r0"
-BAND = (4000.0, 8000.0)          # mid-level window-center band [m]
+BAND = (6000.0, 8000.0)          # mid-level window-center band [m]
 Z_CHUNK = 16
 ORDERS = (1.0, 2.0, 3.0)
 XI_ORDERS = np.arange(0.2, 3.01, 0.2)
@@ -53,114 +55,81 @@ plt.rcParams.update({
 })
 
 
-def haar_x_moments(var, lags_cells, orders, z_select=None):
-    """<|Haar_x|^q> per lag along the periodic x axis, pooled over y, z.
+def haar_moments(field, lags_cells, orders, axis, periodic):
+    """Canonical mean-absolute-Haar moments via scaleinvariance.
 
-    var: netCDF variable (x, y, z). lags_cells: even ints. Returns
-    (n_lags, n_orders) float64.
+    Returns (n_lags, n_orders) to preserve this script's npz layout
+    (scaleinvariance returns (n_orders, n_lags)).
     """
-    nx, ny, nz = var.shape
-    sums = np.zeros((len(lags_cells), len(orders)))
-    counts = np.zeros(len(lags_cells))
-    z_indices = np.arange(nz) if z_select is None else np.nonzero(z_select)[0]
-    max_lag = max(lags_cells)
-    for z0 in range(0, len(z_indices), Z_CHUNK):
-        zi = z_indices[z0:z0 + Z_CHUNK]
-        field = np.asarray(var[:, :, zi[0]:zi[-1] + 1], dtype=np.float64)
-        field = field[:, :, zi - zi[0]] if len(zi) > 1 else field
-        # ONE periodic cumulative sum per chunk, padded to the largest lag;
-        # every lag's half-window block sums are differences into it.
-        csum = np.cumsum(
-            np.concatenate([field, field[:max_lag - 1]], axis=0), axis=0)
-        for j, lag in enumerate(lags_cells):
-            half = lag // 2
-            block = np.empty((nx, field.shape[1], field.shape[2]))
-            block[0] = csum[half - 1]
-            block[1:] = csum[half:half + nx - 1] - csum[:nx - 1]
-            upper = np.empty_like(block)
-            upper[0] = csum[lag - 1] - csum[half - 1]
-            upper[1:] = csum[lag:lag + nx - 1] - csum[half:half + nx - 1]
-            haar = (upper - block) / half
-            for oi, q in enumerate(orders):
-                sums[j, oi] += float(np.sum(np.abs(haar) ** q))
-            counts[j] += haar.size
-    return sums / counts[:, None]
-
-
-def haar_z_moments(var, z, lags_m, orders, band=None):
-    """<|Haar_z|^q> per physical lag, window CENTERS restricted to band.
-
-    The vertical grid is uniform for constant spheroscale; verified below.
-    """
-    nx, ny, nz = var.shape
-    dz = float(np.mean(np.diff(z)))
-    assert np.allclose(np.diff(z), dz, rtol=1e-3), "z grid not uniform"
-    sums = np.zeros((len(lags_m), len(orders)))
-    counts = np.zeros(len(lags_m))
-    for x0 in range(0, nx, 1024):
-        field = np.asarray(var[x0:x0 + 1024, :, :], dtype=np.float64)
-        csum = np.cumsum(field, axis=2)
-        for j, lag_m in enumerate(lags_m):
-            half = max(1, int(round(lag_m / dz / 2)))
-            lag = 2 * half
-            if lag >= nz:
-                sums[j] = np.nan
-                continue
-            lower = (csum[:, :, half - 1:nz - half - 1]
-                     - np.concatenate([
-                         np.zeros_like(csum[:, :, :1]),
-                         csum[:, :, :nz - lag - 1]], axis=2))
-            upper = (csum[:, :, lag - 1:nz - 1]
-                     - csum[:, :, half - 1:nz - half - 1])
-            haar = (upper - lower) / half
-            if band is not None:
-                centers = z[half:nz - half]
-                keep = (centers >= band[0]) & (centers <= band[1])
-                haar = haar[:, :, keep]
-            if haar.size == 0:
-                sums[j] = np.nan
-                continue
-            for oi, q in enumerate(orders):
-                sums[j, oi] += float(np.sum(np.abs(haar) ** q))
-            counts[j] += haar.size
-    return sums / np.where(counts > 0, counts, 1)[:, None]
+    import scaleinvariance as si
+    lags_used, F = si.haar_fluctuation(
+        field, order=np.asarray(orders, dtype=float), axis=axis,
+        lags=np.asarray(lags_cells, dtype=int), periodic=periodic)
+    if not np.array_equal(lags_used, np.asarray(lags_cells)):
+        raise ValueError(f"lags altered by estimator: {lags_used}")
+    F = np.atleast_2d(F)
+    return np.asarray(F).T
 
 
 def profile_mhat(profile, z, lags_m):
-    """Mean absolute Haar of the 1D mean profile at each lag."""
-    out = np.full(len(lags_m), np.nan)
+    """Mean absolute Haar of the 1D mean profile at each physical lag."""
+    import scaleinvariance as si
     dz = float(np.mean(np.diff(z)))
-    csum = np.cumsum(np.asarray(profile, dtype=np.float64))
-    n = profile.size
+    lags_cells = np.unique(np.maximum(
+        2, (np.round(np.asarray(lags_m) / dz / 2) * 2).astype(int)))
+    _, F = si.haar_fluctuation(
+        np.asarray(profile, dtype=np.float64), order=1.0, axis=0,
+        lags=lags_cells)
+    out = np.full(len(lags_m), np.nan)
     for j, lag_m in enumerate(lags_m):
-        half = max(1, int(round(lag_m / dz / 2)))
-        lag = 2 * half
-        if lag >= n:
-            continue
-        lower = csum[half - 1:n - half - 1] - np.concatenate(
-            [[0.0], csum[:n - lag - 1]])
-        upper = csum[lag - 1:n - 1] - csum[half - 1:n - half - 1]
-        out[j] = float(np.mean(np.abs(upper - lower) / half))
+        cell = max(2, int(round(lag_m / dz / 2)) * 2)
+        i = np.searchsorted(lags_cells, cell)
+        if i < len(lags_cells) and lags_cells[i] == cell:
+            out[j] = F[i] if F.ndim == 1 else F[0, i]
     return out
 
 
-def flux_box_kq(var, box_cells, orders):
-    """<F_lambda^q> per box size: 1D coarse-graining along x, pooled y,z."""
-    nx, ny, nz = var.shape
+def flux_box_kq_array(field, box_cells, orders):
+    """<F_lambda^q> per box size: 1D coarse-graining along x, pooled y,z.
+
+    Kept alongside the scaleinvariance estimators deliberately: this is the
+    UM box-mean object, the same estimator as the C1 calibration
+    (calibration/flux_c1_calibration.py), for direct comparability.
+    """
+    nx = field.shape[0]
     moments = np.zeros((len(box_cells), len(orders)))
-    counts = np.zeros(len(box_cells))
-    for z0 in range(0, nz, Z_CHUNK):
-        field = np.asarray(var[:, :, z0:z0 + Z_CHUNK], dtype=np.float64)
-        for j, box in enumerate(box_cells):
-            coarse = field[:nx - nx % box].reshape(
-                nx // box, box, field.shape[1], field.shape[2]).mean(axis=1)
-            for oi, q in enumerate(orders):
-                moments[j, oi] += float(np.sum(coarse ** q))
-            counts[j] += coarse.size
-    return moments / counts[:, None]
+    for j, box in enumerate(box_cells):
+        coarse = field[:nx - nx % box].astype(np.float64).reshape(
+            nx // box, box, field.shape[1], field.shape[2]).mean(axis=1)
+        for oi, q in enumerate(orders):
+            moments[j, oi] = float(np.mean(coarse ** q))
+    return moments
+
+
+def reference_slope(ax, x_center, y_center, slope, span_decades=1.8,
+                    color="0.4", label=None):
+    """Short reference-slope segment pegged to (x_center, y_center)."""
+    half = 10 ** (span_decades / 2)
+    xs = np.array([x_center / half, x_center * half])
+    ys = y_center * (xs / x_center) ** slope
+    ax.plot(xs, ys, color=color, lw=0.9, ls="-.", alpha=0.9)
+    if label:
+        ax.annotate(label, (xs[1], ys[1]), fontsize=6.5, color=color,
+                    xytext=(2, -2), textcoords="offset points")
+
+
+H_H = 0.45                  # production horizontal Hurst
+H_V = 0.45 / (5.0 / 9.0)    # vertical Hurst = H_h / H_z anisotropy = 0.81
 
 
 def main():
+    if "--figures-only" in sys.argv:
+        d = np.load(HERE / "stats" / "strip_appendix.npz")
+        out = {k: d[k] for k in d.files}
+        lags_x = out["lags_x"]
+        lags_z = out["lags_z"]
+        make_figures(out, lags_x, lags_z)
+        return
     ds = netCDF4.Dataset(PARENT)
     grp = ds
     for part in GROUP.split("/"):
@@ -174,40 +143,56 @@ def main():
     # Horizontal dyadic lags: 2 cells (2*375 m) up to nx/4.
     lags_cells = [2 ** j for j in range(1, int(np.log2(nx // 4)) + 1)]
     lags_x = np.array([lag * dx for lag in lags_cells])
-    # Vertical lags: dyadic in metres from ~2 dz up to 16 km.
+    # Vertical lags: dyadic in CELLS from 2 dz up to ~14 km.
     dz = float(np.mean(np.diff(z)))
-    lags_z = np.array([dz * 2 * 2 ** j for j in range(0, 8)])
-    lags_z = lags_z[lags_z < 16000.0]
+    lags_z_cells = np.array([2 * 2 ** j for j in range(0, 8)])
+    lags_z_cells = lags_z_cells[lags_z_cells * dz < 16000.0]
+    lags_z = lags_z_cells * dz
 
     out = {"lags_x": lags_x, "lags_z": lags_z}
     band_mask = (z >= BAND[0]) & (z <= BAND[1])
 
-    for name in ("h", "qt"):
-        var = grp.variables[name]
-        print(f"{name}: horizontal M-hat (full, band)...", flush=True)
-        out[f"{name}_mhat_x_full"] = haar_x_moments(var, lags_cells, ORDERS)
-        out[f"{name}_mhat_x_band"] = haar_x_moments(
-            var, lags_cells, ORDERS, z_select=band_mask)
-        print(f"{name}: vertical M-hat (full, band)...", flush=True)
-        out[f"{name}_mhat_z_full"] = haar_z_moments(var, z, lags_z, ORDERS)
-        out[f"{name}_mhat_z_band"] = haar_z_moments(
-            var, z, lags_z, ORDERS, band=BAND)
-        profile = grp.variables[f"{name}_profile"][:]
-        z_profile = grp.variables["z_profile"][:].astype(np.float64)
-        out[f"{name}_profile_mhat_z"] = profile_mhat(profile, z_profile, lags_z)
-        print(f"{name}: xi(q) fit...", flush=True)
-        out[f"{name}_mhat_x_xi"] = haar_x_moments(var, lags_cells, XI_ORDERS)
+    slab = np.nonzero(band_mask)[0]
+    all_orders = np.asarray(sorted(set(ORDERS) | set(np.round(XI_ORDERS, 3))))
+    idx_orders = [int(np.searchsorted(all_orders, q)) for q in ORDERS]
+    idx_xi = [int(np.searchsorted(all_orders, round(q, 3)))
+              for q in XI_ORDERS]
 
-    print("flux: horizontal M-hat + box K(q)...", flush=True)
-    fvar = grp.variables["flux"]
-    out["flux_mhat_x_full"] = haar_x_moments(fvar, lags_cells, ORDERS)
-    out["flux_mhat_x_xi"] = haar_x_moments(fvar, lags_cells, XI_ORDERS)
-    box_cells = lags_cells
-    out["flux_box_moments"] = flux_box_kq(fvar, box_cells, XI_ORDERS)
+    for name in ("h", "qt", "flux"):
+        print(f"{name}: loading...", flush=True)
+        field = np.asarray(grp.variables[name][:], dtype=np.float32)
+        print(f"{name}: horizontal M-hat (full, band)...", flush=True)
+        m = haar_moments(field, lags_cells, all_orders, axis=0, periodic=True)
+        out[f"{name}_mhat_x_full"] = m[:, idx_orders]
+        out[f"{name}_mhat_x_xi"] = m[:, idx_xi]
+        if name != "flux":
+            out[f"{name}_mhat_x_band"] = haar_moments(
+                field[:, :, slab], lags_cells, ORDERS, axis=0, periodic=True)
+            print(f"{name}: vertical M-hat (full, band)...", flush=True)
+            out[f"{name}_mhat_z_full"] = haar_moments(
+                field, lags_z_cells, ORDERS, axis=2, periodic=False)
+            band_lags = lags_z_cells[lags_z_cells < slab.size]
+            band_m = haar_moments(
+                field[:, :, slab], band_lags, ORDERS, axis=2, periodic=False)
+            padded = np.full((len(lags_z_cells), len(ORDERS)), np.nan)
+            padded[:len(band_lags)] = band_m
+            out[f"{name}_mhat_z_band"] = padded
+            profile = grp.variables[f"{name}_profile"][:]
+            z_profile = grp.variables["z_profile"][:].astype(np.float64)
+            out[f"{name}_profile_mhat_z"] = profile_mhat(
+                profile, z_profile, lags_z)
+        else:
+            print("flux: box K(q)...", flush=True)
+            out["flux_box_moments"] = flux_box_kq_array(field, lags_cells,
+                                                        XI_ORDERS)
+        del field
     ds.close()
 
     np.savez(HERE / "stats" / "strip_appendix.npz", **out)
+    make_figures(out, lags_x, lags_z)
 
+
+def make_figures(out, lags_x, lags_z):
     figdir = HERE / "figs" / "strip-appx"
     figdir.mkdir(parents=True, exist_ok=True)
 
@@ -218,13 +203,23 @@ def main():
         ax.loglog(lags_x / 1000, out[f"{name}_mhat_x_full"][:, 0],
                   color="#1764ab", lw=1.4, label="horizontal, full domain")
         ax.loglog(lags_x / 1000, out[f"{name}_mhat_x_band"][:, 0],
-                  color="#1764ab", lw=1.1, ls="--", label="horizontal, 4-8 km")
+                  color="#1764ab", lw=1.1, ls="--", label="horizontal, 6-8 km")
         ax.loglog(lags_z / 1000, out[f"{name}_mhat_z_full"][:, 0],
                   color="#e76f51", lw=1.4, label="vertical, full domain")
         ax.loglog(lags_z / 1000, out[f"{name}_mhat_z_band"][:, 0],
-                  color="#e76f51", lw=1.1, ls="--", label="vertical, 4-8 km")
+                  color="#e76f51", lw=1.1, ls="--", label="vertical, 6-8 km")
         ax.loglog(lags_z / 1000, out[f"{name}_profile_mhat_z"],
                   color="0.25", lw=1.4, ls=":", label="mean profile, vertical")
+        # Reference slopes pegged to each line's central value.
+        for curve, lags, slope, lab in (
+                (out[f"{name}_mhat_x_full"][:, 0], lags_x, H_H, "$H_h$"),
+                (out[f"{name}_mhat_x_band"][:, 0], lags_x, H_H, None),
+                (out[f"{name}_mhat_z_full"][:, 0], lags_z, H_V, "$H_v$"),
+                (out[f"{name}_mhat_z_band"][:, 0], lags_z, H_V, None)):
+            good = np.isfinite(curve)
+            mid = np.nonzero(good)[0][good.sum() // 2]
+            reference_slope(ax, lags[mid] / 1000, curve[mid], slope,
+                            label=lab)
         ax.set(xlabel="lag [km]", ylabel=f"$\\hat{{M}}_1$ [{unit}]",
                title=name)
         ax.grid(True, which="both", alpha=0.5)
@@ -244,6 +239,10 @@ def main():
             axes[0].loglog(lags_x / 1000, m[:, oi] / m[0, oi],
                            color=colors[name], lw=1.2, alpha=1 - 0.3 * oi,
                            label=f"{name} q={q:g}" if oi == 0 else None)
+    ref = out["h_mhat_x_full"][:, 0] / out["h_mhat_x_full"][0, 0]
+    mid = len(lags_x) // 2
+    reference_slope(axes[0], lags_x[mid] / 1000, ref[mid], H_H,
+                    label="$H_h$")
     axes[0].set(xlabel="lag [km]",
                 ylabel="$\\hat{M}_q(\\ell)\\,/\\,\\hat{M}_q(\\ell_0)$",
                 title="horizontal fluctuation functions, q = 1, 2, 3")
