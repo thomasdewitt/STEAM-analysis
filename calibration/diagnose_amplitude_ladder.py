@@ -18,6 +18,7 @@ Comparing the log-slopes of (1), (2), (3) against H_h = 0.45 localizes
 the break: amplitude law vs deposit vs accumulation.
 """
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +62,7 @@ from steam.simulate import simulate  # noqa: E402
 
 
 def main():
+    sparsity = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     src = np.load(STATS / "icon_lem_snap0.npz")
     z = src["z_profile"]
     out = Path("/tmp/diag_ladder.nc")
@@ -77,6 +79,7 @@ def main():
         output_path=str(out),
         surface_pressure=float(src["surface_pressure"]),
         seed=7,
+        sparsity_factors=(sparsity, sparsity, sparsity),
         h_min=float(src["h_profile"].min()) - 10 * cp,
         h_max=float(src["h_profile"].max()) + 1.0,
         qt_min=0.0, qt_max=0.03,
@@ -99,6 +102,7 @@ def main():
                  for name in ("h", "qt")}
         dx_final = 3000.0
 
+    results = {}
     for si_name, offset in (("h", 1), ("qt", 2)):
         print(f"\n=== {si_name} ===")
         print("k [km]   <|A|>@7km    Mhat1(incr, lag=k)   n_centers")
@@ -106,9 +110,10 @@ def main():
         for i in range(n_classes):
             rec = records[3 * i + offset]
             inc = rec["increment_7km"]
-            # Haar at lag = 2 cells = k on the class's own grid, periodic x.
+            # Haar at lag = 2s cells = k on the class's own grid, periodic x.
             lags, F = si.haar_fluctuation(inc, order=1.0, axis=0,
-                                          lags=np.array([2]), periodic=True)
+                                          lags=np.array([2 * sparsity]),
+                                          periodic=True)
             amps.append(rec["amp_absmean_7km"])
             deposits.append(float(F[0]))
             print(f"{k_values[i]/1000:7.0f}  {amps[-1]:.4e}   {deposits[-1]:.4e}"
@@ -131,6 +136,13 @@ def main():
               f"(design H_h = +0.45)")
         print("final-field Mhat1 at class lags:",
               [f"{v:.3e}" for v in Ff])
+        results[si_name] = dict(k_values=k_values, amps=amps,
+                                deposits=deposits,
+                                final_lags_m=lags * dx_final, final_F=Ff)
+    np.savez(STATS / f"ladder_diag_s{sparsity}.npz",
+             **{f"{n}_{key}": v for n, d in results.items()
+                for key, v in d.items()})
+    print(f"wrote stats/ladder_diag_s{sparsity}.npz")
 
 
 if __name__ == "__main__":
