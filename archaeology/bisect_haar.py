@@ -35,9 +35,12 @@ SLOPE_THRESHOLD = 0.30
 def run():
     import steam
     src = Path(steam.__file__).resolve()
-    assert EGU_REPO in src.parents, f"steam imported from {src}"
-    head = subprocess.run(["git", "-C", str(EGU_REPO), "rev-parse", "--short", "HEAD"],
+    repo = next(p for p in src.parents if (p / ".git").exists())
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
+    if subprocess.run(["git", "-C", str(repo), "diff", "--quiet"]).returncode:
+        head += "+dirty"
+    print(f"steam from {repo} @ {head}")
     from steam.simulate import simulate
 
     src_prof = np.load(HERE / "stats" / "icon_lem_snap0.npz")

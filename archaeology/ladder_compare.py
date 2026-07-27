@@ -34,7 +34,9 @@ LEVEL_M = 7000.0
 DOMAIN_HEIGHT = 20_000.0
 
 sm = importlib.import_module("steam.simulate")
-assert EGU_REPO in Path(sm.__file__).resolve().parents
+STEAM_REPO = next(p for p in Path(sm.__file__).resolve().parents
+                  if (p / ".git").exists())
+print(f"steam from {STEAM_REPO}")
 
 if os.environ.get("NO_FLUX"):      # F ≡ 1 exactly: no flux noise increments
     sm.FLUX_SCALE = 0.0
@@ -90,8 +92,10 @@ sm.CONVOLVE = recording_convolve
 
 def main():
     label = sys.argv[1] if len(sys.argv) > 1 else "era"
-    head = subprocess.run(["git", "-C", str(EGU_REPO), "rev-parse", "--short", "HEAD"],
+    head = subprocess.run(["git", "-C", str(STEAM_REPO), "rev-parse", "--short", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
+    if subprocess.run(["git", "-C", str(STEAM_REPO), "diff", "--quiet"]).returncode:
+        head += "+dirty"
     prof = np.load(HERE / "stats" / "icon_lem_snap0.npz")
     z = prof["z_profile"]
     out = Path(tempfile.gettempdir()) / f"ladder_{label}.nc"
