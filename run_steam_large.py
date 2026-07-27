@@ -23,9 +23,9 @@ import numpy as np
 import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
 _steam_simulate.H_h = 0.45
-# Same C1 override as run_steam.py (calibration C1 = 1.674 c^1.8).
+# Same C1 override as run_steam.py (calibration C1 = 3.097 c^1.8 (2026-07-27 re-fit)).
 C1_TARGET = 0.05
-_steam_simulate.FLUX_SCALE = (C1_TARGET / 1.674) ** (1 / 1.8)
+_steam_simulate.FLUX_SCALE = (C1_TARGET / 3.097) ** (1 / 1.8)
 
 from steam.simulate import simulate
 from steam.thermodynamics import compute_diagnostics

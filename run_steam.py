@@ -30,9 +30,9 @@ import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
 _steam_simulate.H_h = 0.45
 # Reduced flux C1 for the RCEMIP case (default FLUX_SCALE targets C1 = 0.1);
-# calibration C1 = 1.674 c^1.8, so c = (C1/1.674)^(1/1.8).
+# calibration C1 = 3.097 c^1.8 (2026-07-27 re-fit, calibration/), so c = (C1/3.097)^(1/1.8).
 C1_TARGET = 0.05
-_steam_simulate.FLUX_SCALE = (C1_TARGET / 1.674) ** (1 / 1.8)
+_steam_simulate.FLUX_SCALE = (C1_TARGET / 3.097) ** (1 / 1.8)
 
 HERE = Path(__file__).parent
 STATS = HERE / "stats"
