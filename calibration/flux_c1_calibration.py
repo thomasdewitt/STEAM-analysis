@@ -174,7 +174,6 @@ def make_plot(summary: dict, path: Path):
     results = summary["results"]
     alpha = summary["flux_alpha"]
     n_values = sorted({item["n_scale_classes_per_dyad"] for item in results})
-    A = summary["amplitude_fit"]["A"]
     n_realizations = len(results[0]["realizations"])
 
     fig, axes = plt.subplots(
@@ -207,10 +206,11 @@ def make_plot(summary: dict, path: Path):
             fmt="o", color=color, capsize=3,
             label=rf"mean $\pm$ 1 s.d. ($N={n_realizations}$)", zorder=4,
         )
+        A_panel = summary["fits_by_n_c"][str(n_c)]["amplitude_fit"]["A"]
         ax.plot(
-            x_line, A * x_line,
+            x_line, A_panel * x_line,
             color="0.15", lw=1.8,
-            label=rf"low-clip fit: $A={A:.3f}$",
+            label=rf"low-clip fit: $A={A_panel:.3f}$",
         )
         ax.set_xscale("log")
         ax.set_yscale("log")
@@ -317,16 +317,32 @@ def main():
                 flush=True,
             )
 
-    fit_c = np.asarray(fit_c)
-    fit_c1 = np.asarray(fit_c1)
-    if fit_c.size == 0:
-        raise ValueError(
-            "no runs passed the low-clip cut "
-            f"(clip <= {MAX_CLIP_FRACTION_FOR_FIT:.0%}); "
-            "add smaller c values to the ladder"
-        )
-    amplitude_fit = fit_amplitude(fit_c, fit_c1, FLUX_ALPHA)
-    collapse_fit = fit_collapse_exponent(fit_c, fit_c1)
+    # Fit per class density: pooling n_c groups is invalid if the
+    # n_c^(-1/alpha) density compensation is not exactly invariant (it is
+    # not -- see fits_by_n_c and the cross-density ratios in the output).
+    fits_by_n_c = {}
+    for n_c in n_c_values:
+        group = [
+            item for item in results
+            if item["n_scale_classes_per_dyad"] == n_c and item["low_clip"]
+        ]
+        group_c = np.asarray([
+            item["c"] for item in group for _ in item["realizations"]
+        ])
+        group_c1 = np.asarray([
+            run["C1"] for item in group for run in item["realizations"]
+        ])
+        if group_c.size == 0:
+            raise ValueError(
+                f"n_c={n_c}: no runs passed the low-clip cut "
+                f"(clip <= {MAX_CLIP_FRACTION_FOR_FIT:.0%}); "
+                "add smaller c values to the ladder"
+            )
+        fits_by_n_c[n_c] = {
+            "amplitude_fit": fit_amplitude(group_c, group_c1, FLUX_ALPHA),
+            "collapse_exponent_fit": fit_collapse_exponent(group_c, group_c1),
+            "n_low_clip_points": int(group_c.size),
+        }
 
     summary = {
         "generated": datetime.now(timezone.utc).isoformat(),
@@ -346,8 +362,7 @@ def main():
             "base_seed": args.base_seed,
             "max_clip_fraction_for_fit": MAX_CLIP_FRACTION_FOR_FIT,
         },
-        "amplitude_fit": amplitude_fit,
-        "collapse_exponent_fit": collapse_fit,
+        "fits_by_n_c": {str(k): v for k, v in fits_by_n_c.items()},
         "results": results,
         "elapsed_seconds": time.perf_counter() - started,
     }
@@ -358,20 +373,30 @@ def main():
         json.dump(summary, f, indent=1)
     make_plot(summary, out_dir / "figs" / "flux_c1_calibration.png")
 
-    A = amplitude_fit["A"]
-    print(
-        f"\nLow-clip fit: C1 = {A:.3f} * c^{FLUX_ALPHA}  "
-        f"(SE {amplitude_fit['A_standard_error']:.3f}, "
-        f"R^2 {amplitude_fit['r_squared']:.4f})"
-    )
-    print(
-        f"Free exponent check: C1 = {collapse_fit['amplitude']:.3f} "
-        f"* c^{collapse_fit['exponent_on_c']:.3f} "
-        f"(alpha-stable collapse predicts {FLUX_ALPHA}; "
-        f"R^2 {collapse_fit['r_squared']:.4f})"
-    )
+    print()
+    for n_c, fits in fits_by_n_c.items():
+        A = fits["amplitude_fit"]["A"]
+        free = fits["collapse_exponent_fit"]
+        print(
+            f"n_c={n_c}: C1 = {A:.3f} * c^{FLUX_ALPHA} "
+            f"(SE {fits['amplitude_fit']['A_standard_error']:.3f}, "
+            f"R^2 {fits['amplitude_fit']['r_squared']:.4f}); "
+            f"free exponent {free['exponent_on_c']:.3f} "
+            f"(predicts {FLUX_ALPHA}, R^2 {free['r_squared']:.4f})"
+        )
+    base_n_c = min(fits_by_n_c)
+    A_base = fits_by_n_c[base_n_c]["amplitude_fit"]["A"]
+    for n_c in sorted(fits_by_n_c):
+        if n_c != base_n_c:
+            ratio = fits_by_n_c[n_c]["amplitude_fit"]["A"] / A_base
+            print(
+                f"density invariance check A(n_c={n_c})/A(n_c={base_n_c}) = "
+                f"{ratio:.3f} (exact compensation predicts 1; "
+                f"log2 ratio {math.log2(ratio):+.3f} per doubling-equivalent)"
+            )
+    print(f"\nProduction mapping (n_c={base_n_c}):")
     for target in (0.05, 0.1):
-        print(f"c for C1 = {target}: {(target / A) ** (1 / FLUX_ALPHA):.4f}")
+        print(f"c for C1 = {target}: {(target / A_base) ** (1 / FLUX_ALPHA):.4f}")
     print(f"Elapsed: {summary['elapsed_seconds']:.0f} s")
 
 
