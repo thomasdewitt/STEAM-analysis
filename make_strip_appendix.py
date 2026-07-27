@@ -63,17 +63,17 @@ def haar_x_moments(var, lags_cells, orders, z_select=None):
     sums = np.zeros((len(lags_cells), len(orders)))
     counts = np.zeros(len(lags_cells))
     z_indices = np.arange(nz) if z_select is None else np.nonzero(z_select)[0]
+    max_lag = max(lags_cells)
     for z0 in range(0, len(z_indices), Z_CHUNK):
         zi = z_indices[z0:z0 + Z_CHUNK]
         field = np.asarray(var[:, :, zi[0]:zi[-1] + 1], dtype=np.float64)
         field = field[:, :, zi - zi[0]] if len(zi) > 1 else field
-        # Periodic cumulative sum along x: wrap by tiling the needed head.
+        # ONE periodic cumulative sum per chunk, padded to the largest lag;
+        # every lag's half-window block sums are differences into it.
+        csum = np.cumsum(
+            np.concatenate([field, field[:max_lag - 1]], axis=0), axis=0)
         for j, lag in enumerate(lags_cells):
             half = lag // 2
-            # upper-half mean minus lower-half mean, windows starting at
-            # every x (periodic wrap via np.roll on block sums).
-            csum = np.cumsum(
-                np.concatenate([field, field[:lag - 1]], axis=0), axis=0)
             block = np.empty((nx, field.shape[1], field.shape[2]))
             block[0] = csum[half - 1]
             block[1:] = csum[half:half + nx - 1] - csum[:nx - 1]
