@@ -75,6 +75,16 @@ def run_one(model, i):
     h_profile = src["h_profile"]
     qt_profile = src["qt_profile"]
     RUNS.mkdir(exist_ok=True)
+    from steam.thermodynamics import _saturation_mixing_ratio
+    from steam.constants import latent_heat_vaporization as Lv
+    surface_pressure = float(src["surface_pressure"])
+    qt_sat_surface = float(_saturation_mixing_ratio(300.0, surface_pressure))
+    # The gz term puts stratospheric <h> above any surface value, so the
+    # upper bound is the LARGER of surface-saturation MSE and the profile
+    # max (S2 prescription as amended 2026-07-27; the 07-22 wording used
+    # surface-saturation MSE alone and fails validation).
+    h_upper = max(cp * 300.0 + Lv * qt_sat_surface, float(h_profile.max()) + 1.0)
+    h_lower = float(h_profile.min()) - 10.0 * cp
     out_nc = RUNS / f"steam_{model}_snap{i}.nc"
 
     z = src["z_profile"]
@@ -88,11 +98,15 @@ def run_one(model, i):
         domain_height=DOMAIN_HEIGHT,
         profile_dz=PROFILE_DZ,
         output_path=str(out_nc),
-        surface_pressure=float(src["surface_pressure"]),
+        surface_pressure=surface_pressure,
         seed=1000 + i,
-        h_min=h_profile.min() - 10 * cp,
-        h_max=h_profile.max() + 10 * cp,
-        qt_min=0.0, qt_max=max(0.03, 1.5 * qt_profile.max()),
+        # Anchored bounds (supp S2, agreed 2026-07-22): every realization
+        # sees the prescribed 300 K SST, so qt is capped at surface
+        # saturation and h at surface saturation MSE; the lower h bound
+        # allows a 10 K deficit below the coldest point of the profile.
+        h_min=h_lower,
+        h_max=h_upper,
+        qt_min=0.0, qt_max=qt_sat_surface,
         compress=True,
         device="cuda",
     )
