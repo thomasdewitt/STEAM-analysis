@@ -56,6 +56,28 @@ def haar(slab, dx_m):
     return lags * dx_m / 1000, F
 
 
+def _final_projection(slab, name, z_level):
+    """Mean-preserving projection onto the production bounds, one level."""
+    import importlib
+    sm = importlib.import_module("steam.simulate")
+    from steam.thermodynamics import _saturation_mixing_ratio
+    src = np.load(STATS / "icon_lem_snap0.npz")
+    sp = float(src["surface_pressure"])
+    qts = float(_saturation_mixing_ratio(300.0, sp))
+    cp, lv = 1004.0, 2.5e6
+    if name == "h":
+        lo = float(src["h_profile"].min()) - 10.0 * cp
+        hi = max(cp * 300.0 + lv * qts, float(src["h_profile"].max()) + 1.0)
+        prof = src["h_profile"]
+    else:
+        lo, hi = 0.0, qts
+        prof = src["qt_profile"]
+    mean_z = np.float32(np.interp(z_level, src["z_profile"], prof))
+    pert = (slab - mean_z)[:, :, None].copy()
+    sm._project_onto_bounds(pert, np.array([mean_z]), lo, hi)
+    return pert[:, :, 0] + mean_z
+
+
 def main():
     done = [v for v in VARIANTS if (STATS / f"curv_{v}.npz").exists()
             and (RUNS / f"curv_{v}.nc").exists()]
@@ -83,6 +105,16 @@ def main():
             ax.loglog(lags_km, F, color=VCOLORS[v], lw=1.2,
                       label=f"{v} ({fit_slope(lags_km, F, BAND_FULL):+.2f} / "
                             f"{fit_slope(lags_km, F, BAND_SMALL):+.2f})")
+            if v == "renormtaper_noproj":
+                # The actual candidate: raw cascade + ONE final projection.
+                # (The nc stores the unprojected field; projection is
+                # per-level, so applying it to this level alone is exact.)
+                proj = _final_projection(slab, name, float(z[iz]))
+                lags_km, F = haar(proj, dxm)
+                ax.loglog(lags_km, F, color=VCOLORS[v], lw=1.8, ls="--",
+                          label=f"  + final proj "
+                                f"({fit_slope(lags_km, F, BAND_FULL):+.2f} / "
+                                f"{fit_slope(lags_km, F, BAND_SMALL):+.2f})")
         mid = np.searchsorted(lags_km, 30.0)
         xs = np.array([lags_km[mid] / 3, lags_km[mid] * 3])
         ax.loglog(xs, F[mid] * (xs / lags_km[mid]) ** H_DESIGN,
