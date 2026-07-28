@@ -1,5 +1,8 @@
 #!/bin/bash
-# Production regeneration under the 2026-07-28 code (joint W.S_k.g norm,
+# Production regeneration under the 2026-07-28-evening code (joint norm,
+# INTERPOLATION_COMPENSATION on scalars AND flux, per-class increments on
+# square parents, lambda re-anchored). GATED on the c->C1 re-fit
+# (flux compensation moved the calibration); update FLUX_SCALE first.
 # bounded amplitude-preserving add, ZOOM_RETENTION comp). Pre-fix output
 # deleted first. Squares trimmed to 3 members. Restartable (existing outputs skipped),
 # so rerunning this script resumes where it stopped.

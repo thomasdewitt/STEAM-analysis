@@ -82,6 +82,11 @@ def run_square(model, member):
         qt_min=0.0, qt_max=qt_sat_surface,
         compress=True,
         device="cuda",
+        # Store per-class increments: the strips are refined from these
+        # parents, and refine() needs them to re-scale inherited content
+        # to the nest's interpolation-compensation reference
+        # (Thomas's ruling, 2026-07-28). ~6 GB extra per member.
+        save_class_increments=True,
     )
     compute_diagnostics(str(out_nc), compress=True)
     print(f"square {model} m{member} done", flush=True)
