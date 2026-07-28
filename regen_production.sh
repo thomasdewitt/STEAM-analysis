@@ -1,7 +1,7 @@
 #!/bin/bash
-# Production regeneration under the 2026-07-27 fixed code (joint W.S_k
-# product norm + ZOOM_RETENTION compensation). All pre-fix output was
-# deleted first. Every stage is restartable (existing outputs skipped),
+# Production regeneration under the 2026-07-28 code (joint W.S_k.g norm,
+# bounded amplitude-preserving add, ZOOM_RETENTION comp). Pre-fix output
+# deleted first. Squares trimmed to 3 members. Restartable (existing outputs skipped),
 # so rerunning this script resumes where it stopped.
 #
 #   1. RCEMIP channel comparison  (27 runs, GPU, ~15 min)

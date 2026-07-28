@@ -4,7 +4,7 @@
 Same methodology as make_fractal.py (tau > 1 masks from vertically
 integrated optical depth, objscale ensemble correlation dimension +
 finite-domain area-distribution exponent), applied per case to the
-10-member production square ensembles steam_sq10_{model}_m{00..09}
+production square ensembles steam_sq10_{model}_m{00..} (N_MEMBERS)
 (6144 x 6144 km at dx = 3 km, outer scale 1536 km, constant 10 m
 spheroscale, c = 0.1010; 2026-07-27 fixed code). All 10 members pass to
 objscale in one call per case.
@@ -31,7 +31,7 @@ RUNS = HERE / "runs"
 TAU_THRESHOLD = 1.0
 DX = 3000.0
 MODELS = ("icon_lem", "ukmo_ra1t")
-N_MEMBERS = 10
+N_MEMBERS = 3   # trimmed from 10 (Thomas, 2026-07-28: runtime)
 
 spec = importlib.util.spec_from_file_location(
     "cv_optical_depth",

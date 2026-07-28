@@ -28,7 +28,7 @@ HERE = Path(__file__).parent
 RUNS = HERE / "runs"
 LEVEL_M = float(sys.argv[1]) if len(sys.argv) > 1 else 7000.0
 MODELS = ("icon_lem", "ukmo_ra1t")
-N_MEMBERS = 10
+N_MEMBERS = 3   # trimmed from 10 (Thomas, 2026-07-28: runtime)
 DX = 3000.0
 H_H = 0.45
 
