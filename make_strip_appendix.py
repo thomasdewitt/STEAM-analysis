@@ -27,6 +27,13 @@ Writes figs/strip-appx/mhat_normalization.png, kq_fluctuations.png and
 stats/strip_appendix.npz.
 
 Usage: python make_strip_appendix.py [parent.nc] [group]
+                                     [--tag NAME] [--profiles PATH.npz]
+
+--tag NAME suffixes all outputs (_NAME) so a benchmark run does not
+clobber the production figures. --profiles supplies the mean h/qt/z
+profiles from a stats npz when the nest group lacks *_profile variables
+(the May-checkpoint nests). A group without a flux variable (the May
+code has no flux cascade) simply drops the flux curves.
 """
 
 import sys
@@ -39,9 +46,14 @@ import netCDF4
 import numpy as np
 
 HERE = Path(__file__).parent
-PARENT = (Path(sys.argv[1]) if len(sys.argv) > 1
-          else HERE / "runs" / "steam_square_icon_lem_snap0.nc")
-GROUP = sys.argv[2] if len(sys.argv) > 2 else "refinements/r0"
+_pos = [a for a in sys.argv[1:] if not a.startswith("--")]
+PARENT = Path(_pos[0]) if _pos else HERE / "runs" / "steam_sq10_icon_lem_m00.nc"
+GROUP = _pos[1] if len(_pos) > 1 else "refinements/r0"
+TAG = (sys.argv[sys.argv.index("--tag") + 1]
+       if "--tag" in sys.argv else "")
+SUFFIX = f"_{TAG}" if TAG else ""
+PROFILES_NPZ = (Path(sys.argv[sys.argv.index("--profiles") + 1])
+                if "--profiles" in sys.argv else None)
 BAND = (6000.0, 8000.0)          # mid-level window-center band [m]
 Z_CHUNK = 16
 ORDERS = (1.0, 2.0, 3.0)
@@ -124,7 +136,7 @@ H_V = 0.45 / (5.0 / 9.0)    # vertical Hurst = H_h / H_z anisotropy = 0.81
 
 def main():
     if "--figures-only" in sys.argv:
-        d = np.load(HERE / "stats" / "strip_appendix.npz")
+        d = np.load(HERE / "stats" / f"strip_appendix{SUFFIX}.npz")
         out = {k: d[k] for k in d.files}
         lags_x = out["lags_x"]
         lags_z = out["lags_z"]
@@ -135,10 +147,14 @@ def main():
     for part in GROUP.split("/"):
         grp = grp.groups[part]
     grp.set_auto_mask(False)
-    x = grp.variables["x"][:]
     z = grp.variables["z"][:].astype(np.float64)
-    dx = float(np.mean(np.diff(x)))
-    nx = x.size
+    if "x" in grp.variables:
+        x = grp.variables["x"][:]
+        dx = float(np.mean(np.diff(x)))
+        nx = x.size
+    else:                       # May-era nest groups: dx attribute only
+        nx = len(grp.dimensions["x"])
+        dx = float(grp.dx)
 
     # Horizontal dyadic lags: 2 cells (2*375 m) up to nx/4.
     lags_cells = [2 ** j for j in range(1, int(np.log2(nx // 4)) + 1)]
@@ -158,7 +174,8 @@ def main():
     idx_xi = [int(np.searchsorted(all_orders, round(q, 3)))
               for q in XI_ORDERS]
 
-    for name in ("h", "qt", "flux"):
+    names = ["h", "qt"] + (["flux"] if "flux" in grp.variables else [])
+    for name in names:
         print(f"{name}: loading...", flush=True)
         field = np.asarray(grp.variables[name][:], dtype=np.float32)
         print(f"{name}: horizontal M-hat (full, band)...", flush=True)
@@ -177,8 +194,16 @@ def main():
             padded = np.full((len(lags_z_cells), len(ORDERS)), np.nan)
             padded[:len(band_lags)] = band_m
             out[f"{name}_mhat_z_band"] = padded
-            profile = grp.variables[f"{name}_profile"][:]
-            z_profile = grp.variables["z_profile"][:].astype(np.float64)
+            if f"{name}_profile" in grp.variables:
+                profile = grp.variables[f"{name}_profile"][:]
+                z_profile = grp.variables["z_profile"][:].astype(np.float64)
+            elif PROFILES_NPZ is not None:
+                src = np.load(PROFILES_NPZ)
+                profile = src[f"{name}_profile"]
+                z_profile = src["z_profile"].astype(np.float64)
+            else:
+                raise KeyError(
+                    f"{name}_profile not in group; pass --profiles npz")
             out[f"{name}_profile_mhat_z"] = profile_mhat(
                 profile, z_profile, lags_z)
         else:
@@ -188,7 +213,7 @@ def main():
         del field
     ds.close()
 
-    np.savez(HERE / "stats" / "strip_appendix.npz", **out)
+    np.savez(HERE / "stats" / f"strip_appendix{SUFFIX}.npz", **out)
     make_figures(out, lags_x, lags_z)
 
 
@@ -227,13 +252,15 @@ def make_figures(out, lags_x, lags_z):
     fig.suptitle("Strip-nest M-hat fluctuation functions vs the mean profile "
                  "(normalization test)", fontsize=10)
     fig.tight_layout()
-    fig.savefig(figdir / "mhat_normalization.png")
+    fig.savefig(figdir / f"mhat_normalization{SUFFIX}.png")
     plt.close(fig)
 
     # ── Figure 2: orders 1,2,3 + xi(q)/K(q), horizontal ──
     fig, axes = plt.subplots(1, 2, figsize=(9.8, 4.6))
     colors = {"h": "#1764ab", "qt": "#e76f51", "flux": "#2a9d8f"}
-    for name in ("h", "qt", "flux"):
+    have_flux = "flux_mhat_x_full" in out
+    fields = ("h", "qt", "flux") if have_flux else ("h", "qt")
+    for name in fields:
         m = out[f"{name}_mhat_x_full"]
         for oi, q in enumerate(ORDERS):
             axes[0].loglog(lags_x / 1000, m[:, oi] / m[0, oi],
@@ -251,17 +278,18 @@ def make_figures(out, lags_x, lags_z):
     # one octave of inherited scales; flux K(q) from box moments over the
     # same range.
     fit = lags_x <= 6000.0
-    for name in ("h", "qt", "flux"):
+    for name in fields:
         m = out[f"{name}_mhat_x_xi"]
         xi = [np.polyfit(np.log(lags_x[fit]), np.log(m[fit, oi]), 1)[0]
               for oi in range(len(XI_ORDERS))]
         axes[1].plot(XI_ORDERS, xi, color=colors[name], lw=1.3,
                      label=f"{name} $\\xi(q)$")
-    box = out["flux_box_moments"]
-    kq = [-np.polyfit(np.log(lags_x[fit]), np.log(box[fit, oi]), 1)[0]
-          for oi in range(len(XI_ORDERS))]
-    axes[1].plot(XI_ORDERS, kq, color=colors["flux"], lw=1.3, ls="--",
-                 label="flux $K(q)$ (box)")
+    if have_flux:
+        box = out["flux_box_moments"]
+        kq = [-np.polyfit(np.log(lags_x[fit]), np.log(box[fit, oi]), 1)[0]
+              for oi in range(len(XI_ORDERS))]
+        axes[1].plot(XI_ORDERS, kq, color=colors["flux"], lw=1.3, ls="--",
+                     label="flux $K(q)$ (box)")
     axes[1].axhline(0, color="#9A938B", lw=0.7)
     axes[1].set(xlabel="q", ylabel="exponent",
                 title="moment-scaling exponents (fit: lags $\\leq$ 6 km)")
@@ -271,10 +299,11 @@ def make_figures(out, lags_x, lags_z):
     fig.suptitle("Strip-nest horizontal moment scaling (h, $q_t$, flux)",
                  fontsize=10)
     fig.tight_layout()
-    fig.savefig(figdir / "kq_fluctuations.png")
+    fig.savefig(figdir / f"kq_fluctuations{SUFFIX}.png")
     plt.close(fig)
 
-    print("wrote figs/strip-appx/mhat_normalization.png, kq_fluctuations.png")
+    print(f"wrote figs/strip-appx/mhat_normalization{SUFFIX}.png, "
+          f"kq_fluctuations{SUFFIX}.png")
 
 
 if __name__ == "__main__":
