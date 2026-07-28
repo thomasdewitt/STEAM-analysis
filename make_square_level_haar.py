@@ -83,7 +83,7 @@ def main():
         ax.grid(True, which="both", alpha=0.5)
         ax.legend(fontsize=7.5)
     fig.suptitle(f"Horizontal Haar fluctuation at z = {z_used:.0f} m "
-                 f"(10 square members each, pooled in one call)", fontsize=10)
+                 f"({N_MEMBERS} square members each, pooled in one call)", fontsize=10)
     fig.tight_layout()
     (HERE / "figs" / "square").mkdir(parents=True, exist_ok=True)
     fig.savefig(HERE / "figs" / "square" / "haar_level.png")
