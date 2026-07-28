@@ -31,7 +31,7 @@ import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
 _steam_simulate.H_h = 0.45
 C1_TARGET = 0.05
-_steam_simulate.FLUX_SCALE = (C1_TARGET / 3.097) ** (1 / 1.8)
+_steam_simulate.FLUX_SCALE = (C1_TARGET / 1.681) ** (1 / 1.8)  # re-fit 2026-07-28 (flux compensation)
 
 from steam.simulate import simulate
 from steam.thermodynamics import compute_diagnostics, _saturation_mixing_ratio
