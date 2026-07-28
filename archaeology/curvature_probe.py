@@ -42,7 +42,7 @@ LV = 2.5e6
 VARIANT = sys.argv[1]
 assert VARIANT in ("stock", "nocomp", "nobounds", "nocomp_nobounds",
                    "b1", "b2", "renormtaper", "noproj",
-                   "renormtaper_noproj"), VARIANT
+                   "renormtaper_noproj", "ampproj"), VARIANT
 
 MODEL_REPO = Path.home() / "code-and-data" / "turbulon-model"
 
@@ -76,8 +76,88 @@ NORM_BLOCK_NEW = """\
             W /= np.where(level_mean > 0, level_mean, np.float32(1.0))[None, None, :]
 """
 
-if VARIANT.startswith("renormtaper"):
-    tmp_pkg = Path("/tmp/steam_renormtaper")
+# VARIANT ampproj: taper inside the norm (pattern shaping) + the
+# amplitude-preserving bounded add replacing the per-class projection.
+# The operator iterates demean -> clip-to-caps -> rescale-to-A0 per
+# level, with a final demean+clip pass so bounds are exact; A0 is the
+# increment's own pre-clip mean-abs (bounding decoupled from
+# calibration). Near the feasibility ceiling 2*min(<phi>-lo, hi-<phi>)
+# the rescale stalls against the clip: the level delivers the maximum
+# realizable amplitude instead of the design value.
+AMPPROJ_DEPOSIT_OLD = """\
+            W *= C_k_i          # 1D broadcast: mean amplitude C_k(z)
+
+            # Interpolation-retention compensation: amplify this class's
+            # deposit by the inverse of the measured retention of the
+            # regrid chain it has yet to traverse, so the FINAL grid
+            # carries the designed amplitude ladder. The finest class is
+            # never regridded (factor 1).
+            m = min(n_classes - 1 - i, len(ZOOM_RETENTION) - 1)
+            W *= np.float32(1.0 / ZOOM_RETENTION[m])
+
+            # Convolve and accumulate (periodic x,y; zero-padded z)
+            perturbation_field += CONVOLVE(W, kernel, device=device)
+            del W
+
+            # Mean-preserving projection onto the bounds, so subsequent
+            # classes' gradients see a field already within [φ_min, φ_max].
+            _project_onto_bounds(perturbation_field, mean_1d, phi_min, phi_max,
+                                 window=window)
+"""
+AMPPROJ_DEPOSIT_NEW = """\
+            W *= C_k_i          # 1D broadcast: mean amplitude C_k(z)
+
+            m = min(n_classes - 1 - i, len(ZOOM_RETENTION) - 1)
+            W *= np.float32(1.0 / ZOOM_RETENTION[m])
+
+            # VARIANT ampproj: amplitude-preserving bounded add.
+            inc = CONVOLVE(W, kernel, device=device)
+            del W
+            _bounded_amplitude_add(perturbation_field, mean_1d, inc,
+                                   phi_min, phi_max, window=window)
+            del inc
+"""
+AMPPROJ_FUNC = '''
+
+def _bounded_amplitude_add(pert, mean_1d, inc, lo, hi, window=None, n_iter=10):
+    """Add inc to pert with zero level mean, preserved level mean-abs
+    amplitude, and bounds respected (VARIANT ampproj prototype).
+
+    Iterates demean -> clip to pointwise caps -> rescale to the pre-clip
+    amplitude A0, then a final demean+clip so bounds are exact. Levels
+    whose caps never bind converge in one pass (scale 1). Where A0
+    exceeds the feasibility ceiling the rescale stalls against the clip
+    and the level delivers its maximum realizable amplitude.
+    """
+    lo32 = np.float32(lo)
+    hi32 = np.float32(hi)
+    nz = pert.shape[2]
+    for lev in range(nz):
+        phi = pert[:, :, lev] + mean_1d[lev]
+        cl = lo32 - phi
+        ch = hi32 - phi
+        d = inc[:, :, lev].astype(np.float32).copy()
+        dw = d if window is None else d[window[0]:window[1], window[2]:window[3]]
+        a0 = float(np.abs(dw).mean(dtype=np.float64))
+        if a0 <= 0.0:
+            continue
+        for _ in range(n_iter):
+            d -= np.float32(dw.mean(dtype=np.float64))
+            np.clip(d, cl, ch, out=d)
+            m_abs = float(np.abs(dw).mean(dtype=np.float64))
+            if m_abs <= 0.0:
+                break
+            scale = min(a0 / m_abs, 2.0)
+            if abs(scale - 1.0) < 1e-4:
+                break
+            d *= np.float32(scale)
+        d -= np.float32(dw.mean(dtype=np.float64))
+        np.clip(d, cl, ch, out=d)
+        pert[:, :, lev] += d
+'''
+
+if VARIANT.startswith("renormtaper") or VARIANT == "ampproj":
+    tmp_pkg = Path("/tmp/steam_variant_pkg")
     if tmp_pkg.exists():
         shutil.rmtree(tmp_pkg)
     tmp_pkg.mkdir(parents=True)
@@ -85,7 +165,12 @@ if VARIANT.startswith("renormtaper"):
     src_file = tmp_pkg / "steam" / "simulate.py"
     src = src_file.read_text()
     assert NORM_BLOCK_OLD in src, "norm block drifted; update probe"
-    src_file.write_text(src.replace(NORM_BLOCK_OLD, NORM_BLOCK_NEW))
+    src = src.replace(NORM_BLOCK_OLD, NORM_BLOCK_NEW)
+    if VARIANT == "ampproj":
+        assert AMPPROJ_DEPOSIT_OLD in src, "deposit block drifted; update probe"
+        src = src.replace(AMPPROJ_DEPOSIT_OLD, AMPPROJ_DEPOSIT_NEW)
+        src += AMPPROJ_FUNC
+    src_file.write_text(src)
     sys.path.insert(0, str(tmp_pkg))
     sm = importlib.import_module("steam.simulate")
     assert "VARIANT renormtaper" in Path(sm.__file__).read_text()
@@ -247,8 +332,9 @@ def main():
         save[f"taper_{name}"] = np.array(REC["taper"][name])   # (n, 3)
         for i in range(n_classes):
             save[f"inc_{name}_{i}"] = REC["inc"][name][i]
-            save[f"ps_pre_{name}_{i}"] = REC["ps_pre"][name][i]
-            save[f"ps_post_{name}_{i}"] = REC["ps_post"][name][i]
+            if i < len(REC["ps_pre"][name]):     # ampproj: projection unused
+                save[f"ps_pre_{name}_{i}"] = REC["ps_pre"][name][i]
+                save[f"ps_post_{name}_{i}"] = REC["ps_post"][name][i]
     np.savez_compressed(STATS / f"curv_{VARIANT}.npz", **save)
     print(f"wrote stats/curv_{VARIANT}.npz "
           f"({n_classes} classes, conv calls {conv_count[0]})", flush=True)
