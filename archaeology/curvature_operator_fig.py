@@ -72,14 +72,23 @@ def amp_op_level(pert, lo, hi, mz, n_iter=10):
         if abs(s - 1.0) < 1e-4:
             break
         d *= np.float32(s)
-    # STRICT zero mean: demean-clip to convergence (condition 1 exact;
-    # near the ceiling this is what caps delivered amplitude).
-    for _ in range(40):
-        mu = float(d.mean(dtype=np.float64))
-        if abs(mu) < 1e-9 * max(a0, 1e-30):
-            break
-        d -= np.float32(mu)
-        np.clip(d, cl, ch, out=d)
+    # STRICT zero mean (condition 1 exact) via mu-BISECTION: naive
+    # demean-clip converges at rate = clip-active fraction (useless at
+    # ~0.97 aloft); mean(clip(d - mu)) is monotone piecewise-linear in
+    # mu, so bisection nails it in 60 halvings.
+    d -= np.float32(d.mean(dtype=np.float64))
+    np.clip(d, cl, ch, out=d)
+    if abs(float(d.mean(dtype=np.float64))) > 1e-9 * max(a0, 1e-30):
+        width = float(hi - lo)
+        mu_lo, mu_hi = -width, width
+        for _ in range(60):
+            mu = 0.5 * (mu_lo + mu_hi)
+            if float(np.clip(d - np.float32(mu), cl, ch)
+                     .mean(dtype=np.float64)) > 0.0:
+                mu_lo = mu
+            else:
+                mu_hi = mu
+        d = np.clip(d - np.float32(0.5 * (mu_lo + mu_hi)), cl, ch)
     delivered = float(np.abs(d).mean(dtype=np.float64))
     clip_frac = float(((d == cl) | (d == ch)).mean())
     return d, dict(a0=a0, delivered=delivered, clip_frac=clip_frac)

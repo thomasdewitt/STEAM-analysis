@@ -151,8 +151,27 @@ def _bounded_amplitude_add(pert, mean_1d, inc, lo, hi, window=None, n_iter=10):
             if abs(scale - 1.0) < 1e-4:
                 break
             d *= np.float32(scale)
+        # STRICT zero mean (condition 1 exact) via mu-BISECTION: the
+        # naive demean-clip iteration converges at rate = clip-active
+        # fraction (~0.97 aloft -> useless); the mean of
+        # clip(d - mu, cl, ch) is monotone piecewise-linear in mu, so
+        # bisection converges in 60 halvings regardless (same solve as
+        # _project_onto_bounds). Cheap demean first for the easy levels.
         d -= np.float32(dw.mean(dtype=np.float64))
         np.clip(d, cl, ch, out=d)
+        if abs(float(dw.mean(dtype=np.float64))) > 1e-9 * max(a0, 1e-30):
+            width = float(hi32 - lo32)
+            mu_lo, mu_hi = -width, width
+            for _ in range(60):
+                mu = 0.5 * (mu_lo + mu_hi)
+                trial = np.clip(d - np.float32(mu), cl, ch)
+                tw = (trial if window is None else
+                      trial[window[0]:window[1], window[2]:window[3]])
+                if float(tw.mean(dtype=np.float64)) > 0.0:
+                    mu_lo = mu
+                else:
+                    mu_hi = mu
+            d = np.clip(d - np.float32(0.5 * (mu_lo + mu_hi)), cl, ch)
         pert[:, :, lev] += d
 '''
 
