@@ -27,10 +27,11 @@ HERE = Path(__file__).resolve().parent.parent
 STATS = HERE / "stats"
 RUNS = HERE / "runs" / "archaeology"
 VARIANTS = ("stock", "nocomp", "nobounds", "nocomp_nobounds",
-            "renormtaper", "b1", "b2")
+            "renormtaper", "b1", "b2", "noproj", "renormtaper_noproj")
 VCOLORS = {"stock": "#c0392b", "nocomp": "#2471a3",
            "nobounds": "#229954", "nocomp_nobounds": "#af7ac5",
-           "renormtaper": "#e67e22", "b1": "#16a085", "b2": "#7f8c8d"}
+           "renormtaper": "#e67e22", "b1": "#16a085", "b2": "#7f8c8d",
+           "noproj": "#2c3e50", "renormtaper_noproj": "#d4ac0d"}
 BAND_FULL = (9.0, 150.0)
 BAND_SMALL = (9.0, 40.0)
 H_DESIGN = 0.45

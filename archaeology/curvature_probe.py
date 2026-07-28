@@ -41,7 +41,8 @@ LV = 2.5e6
 
 VARIANT = sys.argv[1]
 assert VARIANT in ("stock", "nocomp", "nobounds", "nocomp_nobounds",
-                   "b1", "b2", "renormtaper"), VARIANT
+                   "b1", "b2", "renormtaper", "noproj",
+                   "renormtaper_noproj"), VARIANT
 
 MODEL_REPO = Path.home() / "code-and-data" / "turbulon-model"
 
@@ -75,7 +76,7 @@ NORM_BLOCK_NEW = """\
             W /= np.where(level_mean > 0, level_mean, np.float32(1.0))[None, None, :]
 """
 
-if VARIANT == "renormtaper":
+if VARIANT.startswith("renormtaper"):
     tmp_pkg = Path("/tmp/steam_renormtaper")
     if tmp_pkg.exists():
         shutil.rmtree(tmp_pkg)
@@ -107,6 +108,7 @@ if VARIANT == "b2":
     sm.BOUND_BUFFER_MULTIPLE = 2
 
 BOUNDS_OFF = "nobounds" in VARIANT
+PROJ_OFF = BOUNDS_OFF or "noproj" in VARIANT
 real_taper = sm._bound_taper
 real_project = sm._project_onto_bounds
 
@@ -186,7 +188,7 @@ def recording_project(perturbation_field, mean_1d, phi_min, phi_max, window=None
     iz = class_iz(i)
     REC["ps_pre"][name].append(
         np.asarray(perturbation_field[:, :, iz], dtype=np.float32))
-    if not BOUNDS_OFF:
+    if not PROJ_OFF:
         real_project(perturbation_field, mean_1d, phi_min, phi_max, window=window)
     REC["ps_post"][name].append(
         np.asarray(perturbation_field[:, :, iz], dtype=np.float32))
