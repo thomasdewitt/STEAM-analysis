@@ -19,6 +19,7 @@ exists are skipped.
 Usage: python run_production_squares.py [model ...]
 """
 
+import multiprocessing
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -104,7 +105,12 @@ def run_nest(path_str):
 
 def main():
     models = sys.argv[1:] or list(MODELS)
-    nest_pool = ProcessPoolExecutor(max_workers=1)
+    # spawn, not fork: the parent holds a warm CUDA context and torch
+    # thread pool after the first square; a forked worker inherits a
+    # locked intra-op pool and deadlocks on its first big CPU op
+    # (observed 2026-07-27: futex hang inside F.interpolate).
+    nest_pool = ProcessPoolExecutor(
+        max_workers=1, mp_context=multiprocessing.get_context("spawn"))
     pending = []
     for model in models:
         for member in range(N_MEMBERS):
