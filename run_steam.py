@@ -35,6 +35,10 @@ _steam_simulate.H_h = 0.45
 # intermittency C1 in {0.03, 0.1} and constant spheroscale in {3 m, 10 m}.
 # c = (C1/1.681)^(1/1.8) per the 2026-07-28 re-fit (flux compensation).
 CONFIGS = [
+    # Effectively constant flux (c ~ 0.016), Thomas 2026-07-29: replaces
+    # the short-lived C1=0.01/ls=1 config. Tag reads "C1 = 0.001" ("p"
+    # for the decimal point, breaking the 100x-C1 pattern of the others).
+    {"C1": 0.001, "ls": 10.0, "tag": "C1p001_ls10"},
     {"C1": 0.03, "ls": 3.0, "tag": "C1003_ls03"},
     {"C1": 0.03, "ls": 10.0, "tag": "C1003_ls10"},
     {"C1": 0.10, "ls": 3.0, "tag": "C1010_ls03"},
@@ -132,7 +136,7 @@ def run_one(model, i, cfg):
 if __name__ == "__main__":
     models = sys.argv[1:] or sorted({
         p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-        if not p.name.startswith("steam_")})
+        if not p.name.startswith(("steam_", "diag_"))})
     for model in models:
         for cfg in CONFIGS:
             for i in range(3):

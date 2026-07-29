@@ -90,7 +90,8 @@ def analyze(masks):
 def compute():
     models = sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
                      if not p.name.startswith(("steam_", "diag_"))})
-    tags = ["C1003_ls03", "C1003_ls10", "C1010_ls03", "C1010_ls10"]
+    tags = ["C1p001_ls10", "C1003_ls03", "C1003_ls10", "C1010_ls03",
+            "C1010_ls10"]
     out = {"models": np.array(models), "tags": np.array(tags)}
     for model in models:
         cases = [(model, host_masks(model))]

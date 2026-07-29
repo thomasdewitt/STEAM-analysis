@@ -5,9 +5,11 @@ From the icon_lem production square (member m00):
   nest A: 24 x 24 km, full depth, dx = 46.875 m  (512 x 512; 6 octaves
           below the parent's 3 km grid). Site: the 8x8-parent-cell window
           whose cloud fraction at z ~ 1 km is closest to 0.2.
-  nest B: refine of nest A. 6 x 6 km, lowest 2 km, dx ~ 2.93 m
-          (2048 x 2048; 4 more octaves). Site: the 6-km window of nest A
+  nest B: refine of nest A. 3 x 3 km, lowest 2 km, dx ~ 2.93 m
+          (1024 x 1024; 4 more octaves). Site: the 3-km window of nest A
           with cloud fraction at 1 km closest to 0.2.
+          (Spec said 6 km x 2048^2; that cascade needs ~4x this box's
+          RAM — Thomas chose same-spacing/half-breadth, 2026-07-29.)
 
 Both nests contain sub-spheroscale turbulons at the fine end (l_s = 10 m);
 anisotropy is inherited (piecewise isotropic below the spheroscale).
@@ -88,7 +90,7 @@ def main():
         print("nest B exists, skipping", flush=True)
     else:
         mask = _cloud_mask_at(PARENT, "refinements/render_a", 1000.0)
-        win = 128                                # 128 x 46.875 m = 6 km
+        win = 64                                 # 64 x 46.875 m = 3 km
         ix, iy = _best_window(mask, win)
         t0 = time.perf_counter()
         refine(PARENT, ix, ix + win, iy, iy + win, 46.875 / 16, 46.875 / 16,
