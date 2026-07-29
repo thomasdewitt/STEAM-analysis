@@ -51,11 +51,11 @@ def host_masks(model):
     return masks
 
 
-def steam_masks(model):
+def steam_masks(model, tag):
     import netCDF4
     masks = []
     for i in range(3):
-        ds = netCDF4.Dataset(RUNS / f"steam_{model}_snap{i}.nc")
+        ds = netCDF4.Dataset(RUNS / f"steam_{model}_snap{i}_{tag}.nc")
         ds.set_auto_mask(False)
         z = ds.variables["z"][:].astype(np.float64)
         lwc = ds.variables["qc"][:] * 1000.0   # (x, y, z) already
@@ -76,26 +76,31 @@ def analyze(masks):
     dim, bins, C_l = objscale.ensemble_correlation_dimension(
         masks, x_sizes=sizes[0], y_sizes=sizes[0], minlength=2 * DX,
         point_reduction_factor=10, return_C_l=True)
-    exponent, (log_bins, log_counts) = objscale.finite_array_powerlaw_exponent(
-        masks, "area", x_sizes=sizes[0], y_sizes=sizes[0],
-        return_counts=True)
+    # Individual fractal dimension (2026-07-29: replaces the area-distribution
+    # exponent for the channels per Thomas's ruling -- the narrow channel
+    # invalidates size distributions, DeWitt 2024b). objscale defaults
+    # (filled perimeter vs filled area).
+    ind_dim, log_l, log_p = objscale.individual_fractal_dimension(
+        masks, x_sizes=sizes[0], y_sizes=sizes[0], return_values=True)
     cf = float(np.mean([m.mean() for m in masks]))
-    return dict(dim=dim, C_bins=bins, C_l=C_l, exponent=exponent,
-                sd_log_bins=log_bins, sd_log_counts=log_counts, cover=cf)
+    return dict(dim=dim, C_bins=bins, C_l=C_l, ind_dim=ind_dim,
+                ind_log_l=log_l, ind_log_p=log_p, cover=cf)
 
 
 def compute():
     models = sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-                     if not p.name.startswith("steam_")})
-    out = {"models": np.array(models)}
+                     if not p.name.startswith(("steam_", "diag_"))})
+    tags = ["C1003_ls03", "C1003_ls10", "C1010_ls03", "C1010_ls10"]
+    out = {"models": np.array(models), "tags": np.array(tags)}
     for model in models:
-        for prefix, masks in ((model, host_masks(model)),
-                              (f"steam_{model}", steam_masks(model))):
+        cases = [(model, host_masks(model))]
+        cases += [(f"steam_{model}_{t}", steam_masks(model, t)) for t in tags]
+        for prefix, masks in cases:
             r = analyze(masks)
             for k, v in r.items():
                 out[f"{prefix}_{k}"] = v
             print(f"{prefix}: D2={r['dim']:.2f}, "
-                  f"area exp={r['exponent']:.2f}, cover={r['cover']:.2f}")
+                  f"Di={r['ind_dim']:.2f}, cover={r['cover']:.2f}", flush=True)
     np.savez(STATS / "fractal.npz", **out)
     print("wrote stats/fractal.npz")
 
@@ -115,25 +120,38 @@ def figure():
     models = list(d["models"])
     colors = plt.cm.tab10(np.linspace(0, 1, 10))
 
-    fig, axes = plt.subplots(1, 2, figsize=(9.6, 4.6))
+    tags = list(d["tags"])
+
+    fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.6))
     for m, c in zip(models, colors):
-        for prefix, ls in ((m, "-"), (f"steam_{m}", "--")):
-            label = (f"{m} {d[f'{m}_dim']:.2f}/"
-                     f"{d[f'steam_{m}_dim']:.2f}") if ls == "-" else None
+        prefixes = [(m, "-", 1.3)] + [
+            (f"steam_{m}_{t}", "--", 0.7) for t in tags]
+        for prefix, ls, lw in prefixes:
+            label = m if ls == "-" else None
             axes[0].loglog(d[f"{prefix}_C_bins"] / 1000.0, d[f"{prefix}_C_l"],
-                           color=c, lw=1.1, ls=ls, label=label)
-            sd_label = (f"{m} {d[f'{m}_exponent']:.2f}/"
-                        f"{d[f'steam_{m}_exponent']:.2f}") if ls == "-" else None
-            axes[1].plot(d[f"{prefix}_sd_log_bins"] - 6.0,  # m^2 -> km^2
-                         d[f"{prefix}_sd_log_counts"],
-                         color=c, lw=1.1, ls=ls, label=sd_label)
+                           color=c, lw=lw, ls=ls, label=label)
+            axes[1].plot(d[f"{prefix}_ind_log_l"] - 3.0,   # m -> km
+                         d[f"{prefix}_ind_log_p"] - 3.0,
+                         color=c, lw=lw, ls=ls, label=label)
+        # summary: host vs the four STEAM configs
+        axes[2].scatter([d[f"{m}_dim"]], [d[f"{m}_ind_dim"]], color=c, s=28,
+                        marker="o", label=m)
+        for t in tags:
+            axes[2].scatter([d[f"steam_{m}_{t}_dim"]],
+                            [d[f"steam_{m}_{t}_ind_dim"]], color=c, s=16,
+                            marker="x")
     axes[0].set(xlabel="r [km]", ylabel="correlation integral $C(r)$",
-                title="$\\tau>1$ mask correlation integral (host/STEAM $D_2$)")
-    axes[1].set(xlabel="log$_{10}$ area [km$^2$]", ylabel="log$_{10}$ counts",
-                title="area distribution, truncation-corrected (host/STEAM slope)")
+                title="$\\tau>1$ mask correlation integral\n"
+                      "(solid host, dashed STEAM configs)")
+    axes[1].set(xlabel="log$_{10}$ length scale [km]",
+                ylabel="log$_{10}$ filled perimeter [km]",
+                title="individual perimeter-area scaling")
+    axes[2].set(xlabel="ensemble correlation dimension $D_2$",
+                ylabel="individual fractal dimension $D_i$",
+                title="summary (o host, x STEAM)")
     for ax in axes:
         ax.grid(True, which="both", alpha=0.5)
-        ax.legend(fontsize=6, ncol=2)
+    axes[0].legend(fontsize=6, ncol=2)
     fig.tight_layout()
     fig.savefig(HERE / "figs" / "fractal.png")
     print("wrote figs/fractal.png")

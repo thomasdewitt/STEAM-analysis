@@ -63,8 +63,9 @@ def steam_pdfs(model, out):
     import netCDF4
     qt_samples = {t: [] for t in LEVELS_M}
     h_samples = {t: [] for t in LEVELS_M}
-    for i in range(3):
-        ds = netCDF4.Dataset(RUNS / f"steam_{model}_snap{i}.nc")
+    # 2026-07-29 ensemble: pool all 12 members (3 snaps x 4 configs).
+    for path in sorted(RUNS.glob(f"steam_{model}_snap*_C1*.nc")):
+        ds = netCDF4.Dataset(path)
         ds.set_auto_mask(False)
         z = ds.variables["z"][:].astype(np.float64)
         for target in LEVELS_M:
@@ -84,7 +85,7 @@ def steam_pdfs(model, out):
 
 def compute():
     models = sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-                     if not p.name.startswith("steam_")})
+                     if not p.name.startswith(("steam_", "diag_"))})
     out = {"models": np.array(models)}
     for model in models:
         host_pdfs(model, out)

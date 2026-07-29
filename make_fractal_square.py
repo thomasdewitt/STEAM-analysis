@@ -66,13 +66,28 @@ def compute():
         exponent, (log_bins, log_counts) = objscale.finite_array_powerlaw_exponent(
             masks, "area", x_sizes=sizes[0], y_sizes=sizes[0],
             return_counts=True)
+        # 2026-07-29 (Thomas's ruling): squares also get the nested-perimeter
+        # distribution exponent (beta) and the individual fractal dimension.
+        # objscale defaults throughout.
+        beta, (blog_bins, blog_counts) = objscale.finite_array_powerlaw_exponent(
+            masks, "nested perimeter", x_sizes=sizes[0], y_sizes=sizes[0],
+            return_counts=True)
+        ind_dim, ind_log_l, ind_log_p = objscale.individual_fractal_dimension(
+            masks, x_sizes=sizes[0], y_sizes=sizes[0], return_values=True)
         cover = float(np.mean([m.mean() for m in masks]))
         out.update({f"{model}_dim": dim, f"{model}_C_bins": bins,
                     f"{model}_C_l": C_l, f"{model}_exponent": exponent,
                     f"{model}_sd_log_bins": log_bins,
                     f"{model}_sd_log_counts": log_counts,
+                    f"{model}_beta": beta,
+                    f"{model}_beta_log_bins": blog_bins,
+                    f"{model}_beta_log_counts": blog_counts,
+                    f"{model}_ind_dim": ind_dim,
+                    f"{model}_ind_log_l": ind_log_l,
+                    f"{model}_ind_log_p": ind_log_p,
                     f"{model}_cover": cover})
-        print(f"square {model}: D2={dim:.2f}, area exp={exponent:.2f}, "
+        print(f"square {model}: D2={dim:.2f}, Di={ind_dim:.2f}, "
+              f"area exp={exponent:.2f}, nested-perim exp={beta:.2f}, "
               f"cover={cover:.2f}", flush=True)
     np.savez(STATS / "fractal_square.npz", **out)
     print("wrote stats/fractal_square.npz")
@@ -92,7 +107,8 @@ def figure():
     d = np.load(STATS / "fractal_square.npz")
     colors = {"icon_lem": "#1764ab", "ukmo_ra1t": "#e76f51"}
 
-    fig, axes = plt.subplots(1, 2, figsize=(9.6, 4.6))
+    fig, axes2 = plt.subplots(2, 2, figsize=(9.6, 8.8))
+    axes = axes2.ravel()
     for model in MODELS:
         c = colors[model]
         axes[0].loglog(d[f"{model}_C_bins"] / 1000.0, d[f"{model}_C_l"],
@@ -103,11 +119,25 @@ def figure():
                      label=(f"{model}: slope = "
                             f"{float(d[f'{model}_exponent']):.2f}, "
                             f"cover = {float(d[f'{model}_cover']):.2f}"))
+        axes[2].plot(d[f"{model}_beta_log_bins"] - 3.0,
+                     d[f"{model}_beta_log_counts"], color=c, lw=1.4,
+                     label=(f"{model}: slope = "
+                            f"{float(d[f'{model}_beta']):.2f}"))
+        axes[3].plot(d[f"{model}_ind_log_l"] - 3.0,
+                     d[f"{model}_ind_log_p"] - 3.0, color=c, lw=1.4,
+                     label=(f"{model}: $D_i$ = "
+                            f"{float(d[f'{model}_ind_dim']):.2f}"))
     axes[0].set(xlabel="r [km]", ylabel="correlation integral $C(r)$",
                 title=f"$\\tau>1$ mask correlation integral "
                       f"({N_MEMBERS} members each)")
     axes[1].set(xlabel="log$_{10}$ area [km$^2$]", ylabel="log$_{10}$ counts",
                 title="area distribution, truncation-corrected")
+    axes[2].set(xlabel="log$_{10}$ nested perimeter [km]",
+                ylabel="log$_{10}$ counts",
+                title="nested-perimeter distribution, truncation-corrected")
+    axes[3].set(xlabel="log$_{10}$ length scale [km]",
+                ylabel="log$_{10}$ filled perimeter [km]",
+                title="individual perimeter-area scaling")
     for ax in axes:
         ax.grid(True, which="both", alpha=0.5)
         ax.legend(fontsize=8)

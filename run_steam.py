@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Run the frozen STEAM config against every RCEMIP channel profile.
+"""Run the STEAM RCEMIP-channel ensemble against every host profile.
 
-One config, deliberately untuned: H_h = 0.45, spheroscale decreasing
+2x2 config grid (C1 in {0.03, 0.1} x constant spheroscale in {3, 10} m),
+3 snapshots each -> 12 STEAM members per host model. Files carry a
+_C1xxx_lsxx tag. Otherwise the frozen setup, deliberately untuned: H_h = 0.45, spheroscale decreasing
 linearly from 100 m at the surface to 1 m at the domain top, outer scale
 96 km, channel strip 2048 x 128 at dx = 3 km (6144 x 384 km ~ the RCEMIP
 large-domain geometry; y is a strip axis at 4 outer-scale tiles... x is 64
@@ -29,10 +31,15 @@ from steam.constants import specific_heat_dry_air as cp
 import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
 _steam_simulate.H_h = 0.45
-# Reduced flux C1 for the RCEMIP case (default FLUX_SCALE targets C1 = 0.1);
-# calibration C1 = 3.097 c^1.8 (2026-07-27 re-fit, calibration/), so c = (C1/3.097)^(1/1.8).
-C1_TARGET = 0.05
-_steam_simulate.FLUX_SCALE = (C1_TARGET / 1.681) ** (1 / 1.8)  # re-fit 2026-07-28 (flux compensation)
+# RCEMIP ensemble (Thomas, 2026-07-28 evening): 2x2 config grid over
+# intermittency C1 in {0.03, 0.1} and constant spheroscale in {3 m, 10 m}.
+# c = (C1/1.681)^(1/1.8) per the 2026-07-28 re-fit (flux compensation).
+CONFIGS = [
+    {"C1": 0.03, "ls": 3.0, "tag": "C1003_ls03"},
+    {"C1": 0.03, "ls": 10.0, "tag": "C1003_ls10"},
+    {"C1": 0.10, "ls": 3.0, "tag": "C1010_ls03"},
+    {"C1": 0.10, "ls": 10.0, "tag": "C1010_ls10"},
+]
 
 HERE = Path(__file__).parent
 STATS = HERE / "stats"
@@ -70,10 +77,13 @@ def steam_stats(path, out_path):
              qt_mean=qt_mean, qt_var=qt_var, cloud_fraction=cloud_fraction)
 
 
-def run_one(model, i):
-    if (STATS / f"steam_{model}_snap{i}.npz").exists():
-        print(f"steam {model} snap{i} exists, skipping", flush=True)
+def run_one(model, i, cfg):
+    tag = cfg["tag"]
+    name = f"steam_{model}_snap{i}_{tag}"
+    if (STATS / f"{name}.npz").exists():
+        print(f"{name} exists, skipping", flush=True)
         return
+    _steam_simulate.FLUX_SCALE = (cfg["C1"] / 1.681) ** (1 / 1.8)
     src = np.load(STATS / f"{model}_snap{i}.npz")
     h_profile = src["h_profile"]
     qt_profile = src["qt_profile"]
@@ -88,12 +98,11 @@ def run_one(model, i):
     # surface-saturation MSE alone and fails validation).
     h_upper = max(cp * 300.0 + Lv * qt_sat_surface, float(h_profile.max()) + 1.0)
     h_lower = float(h_profile.min()) - 10.0 * cp
-    out_nc = RUNS / f"steam_{model}_snap{i}.nc"
+    out_nc = RUNS / f"{name}.nc"
 
     z = src["z_profile"]
-    # Constant 10 m spheroscale (2026-07-27: switched from the linear
-    # 100 m -> 1 m ramp to match the production squares, Thomas's lean).
-    spheroscale = np.full(z.size, 10.0)
+    # Constant spheroscale per config (2026-07-27 lean; ensemble values 3/10 m).
+    spheroscale = np.full(z.size, cfg["ls"])
     simulate(
         h_profile, qt_profile,
         nx=2048, ny=128, dx=3000.0, dy=3000.0,
@@ -104,7 +113,7 @@ def run_one(model, i):
         profile_dz=PROFILE_DZ,
         output_path=str(out_nc),
         surface_pressure=surface_pressure,
-        seed=1000 + i,
+        seed=1000 + i + 100 * CONFIGS.index(cfg),
         # Anchored bounds (supp S2, agreed 2026-07-22): every realization
         # sees the prescribed 300 K SST, so qt is capped at surface
         # saturation and h at surface saturation MSE; the lower h bound
@@ -116,8 +125,8 @@ def run_one(model, i):
         device="cuda",
     )
     compute_diagnostics(str(out_nc), compress=True)
-    steam_stats(out_nc, STATS / f"steam_{model}_snap{i}.npz")
-    print(f"steam {model} snap{i} done")
+    steam_stats(out_nc, STATS / f"{name}.npz")
+    print(f"{name} done", flush=True)
 
 
 if __name__ == "__main__":
@@ -125,5 +134,6 @@ if __name__ == "__main__":
         p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
         if not p.name.startswith("steam_")})
     for model in models:
-        for i in range(3):
-            run_one(model, i)
+        for cfg in CONFIGS:
+            for i in range(3):
+                run_one(model, i, cfg)
