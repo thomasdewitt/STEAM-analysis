@@ -6,12 +6,12 @@
 _C1xxx_lsxx tag. Otherwise the frozen setup, deliberately untuned: H_h = 0.45, spheroscale decreasing
 linearly from 100 m at the surface to 1 m at the domain top, channel strip
 2048 x 128 at dx = 3 km (6144 x 384 km ~ the RCEMIP large-domain geometry).
-Outer scale 6144 km = the x extent (main-text prescription: L is the
-domain's long dimension), so x is exactly one outer-scale tile and y, at
-L/16, is a strip axis -- the coarsest 4 classes (6144, 3072, 1536, 768 km)
-are wider than y and get kernel-folded onto it. Accepted deliberately: at
-least one axis resolves L. 11 size classes, 6144 km down to 6 km = 2*dx.
-Domain top 20 km, above k_z,L (16.4 km at l_s = 10 m, 9.6 km at l_s = 3 m).
+Outer scale 1536 km = the domain's long dimension / 4, matching the
+supplement's square-domain convention L = L_x/4: x is 4 outer-scale tiles
+and y, at L/4, is a strip axis -- the two coarsest classes (1536, 768 km)
+are wider than y and get kernel-folded onto it. 9 size classes, 1536 km
+down to 6 km = 2*dx. Domain top 20 km, above k_z,L (7.6 km at l_s = 10 m,
+4.5 km at l_s = 3 m).
 One run per model snapshot (seed = snapshot
 index + 1), initialized from that snapshot's mean h/qt profile extracted by
 extract_stats.py. Writes runs/steam_<model>_snap<i>.nc (compressed) and
@@ -113,7 +113,7 @@ def run_one(model, i, cfg):
     simulate(
         h_profile, qt_profile,
         nx=2048, ny=128, dx=3000.0, dy=3000.0,
-        outer_scale=6144000.0,   # = nx * dx, the channel's long dimension
+        outer_scale=1536000.0,   # = nx * dx / 4 (supplement's L = L_x/4)
         spheroscale=spheroscale,
         anisotropy="piecewise_isotropic_below_spheroscale",
         domain_height=DOMAIN_HEIGHT,
