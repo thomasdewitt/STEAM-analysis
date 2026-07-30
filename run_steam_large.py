@@ -17,12 +17,10 @@ from pathlib import Path
 
 import numpy as np
 
-# Same H_h override as run_steam.py: steam.simulate reads its module-level
-# H_h at call time; steam/__init__ rebinds the submodule name, so fetch the
-# real module object.
+# steam/__init__ rebinds the submodule name, so fetch the real module
+# object to override FLUX_SCALE below.
 import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
-_steam_simulate.H_h = 0.45
 # Same C1 override as run_steam.py (calibration C1 = 3.097 c^1.8 (2026-07-27 re-fit)).
 C1_TARGET = 0.05
 _steam_simulate.FLUX_SCALE = (C1_TARGET / 3.097) ** (1 / 1.8)

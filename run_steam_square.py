@@ -19,7 +19,6 @@ import numpy as np
 
 import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
-_steam_simulate.H_h = 0.45
 C1_TARGET = 0.05
 _steam_simulate.FLUX_SCALE = (C1_TARGET / 3.097) ** (1 / 1.8)
 

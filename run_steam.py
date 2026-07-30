@@ -25,12 +25,10 @@ from steam.simulate import simulate
 from steam.thermodynamics import compute_diagnostics
 from steam.constants import specific_heat_dry_air as cp
 
-# Override the horizontal Hurst exponent for this production run set.
-# steam.simulate reads its module-level H_h at call time; steam/__init__
-# rebinds the submodule name, so fetch the real module object.
+# steam/__init__ rebinds the submodule name, so fetch the real module
+# object to override FLUX_SCALE below.
 import importlib
 _steam_simulate = importlib.import_module("steam.simulate")
-_steam_simulate.H_h = 0.45
 # RCEMIP ensemble (Thomas, 2026-07-28 evening): 2x2 config grid over
 # intermittency C1 in {0.03, 0.1} and constant spheroscale in {3 m, 10 m}.
 # c = (C1/1.681)^(1/1.8) per the 2026-07-28 re-fit (flux compensation).
