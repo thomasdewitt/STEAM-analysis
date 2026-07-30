@@ -4,10 +4,15 @@
 2x2 config grid (C1 in {0.03, 0.1} x constant spheroscale in {3, 10} m),
 3 snapshots each -> 12 STEAM members per host model. Files carry a
 _C1xxx_lsxx tag. Otherwise the frozen setup, deliberately untuned: H_h = 0.45, spheroscale decreasing
-linearly from 100 m at the surface to 1 m at the domain top, outer scale
-96 km, channel strip 2048 x 128 at dx = 3 km (6144 x 384 km ~ the RCEMIP
-large-domain geometry; y is a strip axis at 4 outer-scale tiles... x is 64
-tiles, y is 4). Domain top 20 km. One run per model snapshot (seed = snapshot
+linearly from 100 m at the surface to 1 m at the domain top, channel strip
+2048 x 128 at dx = 3 km (6144 x 384 km ~ the RCEMIP large-domain geometry).
+Outer scale 6144 km = the x extent (main-text prescription: L is the
+domain's long dimension), so x is exactly one outer-scale tile and y, at
+L/16, is a strip axis -- the coarsest 4 classes (6144, 3072, 1536, 768 km)
+are wider than y and get kernel-folded onto it. Accepted deliberately: at
+least one axis resolves L. 11 size classes, 6144 km down to 6 km = 2*dx.
+Domain top 20 km, above k_z,L (16.4 km at l_s = 10 m, 9.6 km at l_s = 3 m).
+One run per model snapshot (seed = snapshot
 index + 1), initialized from that snapshot's mean h/qt profile extracted by
 extract_stats.py. Writes runs/steam_<model>_snap<i>.nc (compressed) and
 stats/steam_<model>_snap<i>.npz with the same per-level stats as the host.
@@ -108,7 +113,7 @@ def run_one(model, i, cfg):
     simulate(
         h_profile, qt_profile,
         nx=2048, ny=128, dx=3000.0, dy=3000.0,
-        outer_scale=96000.0,
+        outer_scale=6144000.0,   # = nx * dx, the channel's long dimension
         spheroscale=spheroscale,
         anisotropy="piecewise_isotropic_below_spheroscale",
         domain_height=DOMAIN_HEIGHT,
