@@ -101,8 +101,12 @@ def run_nest(path_str):
             print(f"nest exists in {Path(path_str).name}, skipping", flush=True)
             return
     t0 = time.perf_counter()
+    # compress=True like the square: with the blosc_zstd c1 filter the nest
+    # costs ~6 s of its ~660 s to save ~4.15 GB per member, and the nest is
+    # the larger half of the file. It was uncompressed only because refine()
+    # falls back to constants.output_compress when compress= is not passed.
     refine(path_str, 0, 2048, 1024 - Y_HALF_CELLS, 1024 + Y_HALF_CELLS,
-           NEW_DX, NEW_DX, device="cpu")
+           NEW_DX, NEW_DX, device="cpu", compress=True)
     print(f"nest done in {Path(path_str).name} "
           f"({time.perf_counter() - t0:.0f} s)", flush=True)
 

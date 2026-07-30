@@ -17,11 +17,24 @@ set -e
 cd "$(dirname "$0")"
 PY=.venv/bin/python
 
+# Hard memory cap on the run steps. run_production_squares.py pipelines a GPU
+# square against the previous member's CPU nest, and at their peaks that is
+# ~18 + ~31.5 GB on a 60 GB box. A preflight cannot catch it: both processes
+# ramp gradually and each passes its own start-of-run check while the other
+# has barely allocated, so the collision only exists later, when no
+# checkpoint is looking. A cgroup cap is enforced continuously, which is the
+# only thing that matches that failure mode. The victim is inside the scope
+# and both halves of the driver are restartable -- members whose .nc exists
+# are skipped, nests whose group exists are skipped -- so an OOM-killed
+# member is simply redone on the next run, and the login session is
+# protected absolutely.
+CAP="systemd-run --user --scope -p MemoryMax=50G -p MemorySwapMax=0 --same-dir"
+
 echo "=== [1/3] RCEMIP channels ($(date +%H:%M)) ==="
-$PY run_steam.py
+$CAP $PY run_steam.py
 
 echo "=== [2/3] squares + nests ($(date +%H:%M)) ==="
-$PY run_production_squares.py
+$CAP $PY run_production_squares.py
 
 echo "=== [3/3] analysis ($(date +%H:%M)) ==="
 $PY make_deltas.py
