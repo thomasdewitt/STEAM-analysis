@@ -50,8 +50,8 @@ def snapshot_mean(prefix):
     return out
 
 
-models = sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-                 if not p.name.startswith(("steam_", "diag_"))})
+from extract_stats import CHANNEL_HOSTS
+models = sorted(CHANNEL_HOSTS)
 host = {m: snapshot_mean(m) for m in models}
 steam = {m: snapshot_mean(f"steam_{m}") for m in models}
 models = [m for m in models if host[m] is not None and steam[m] is not None]

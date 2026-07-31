@@ -84,8 +84,8 @@ def steam_pdfs(model, out):
 
 
 def compute():
-    models = sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-                     if not p.name.startswith(("steam_", "diag_"))})
+    from extract_stats import CHANNEL_HOSTS
+    models = sorted(CHANNEL_HOSTS)
     out = {"models": np.array(models)}
     for model in models:
         host_pdfs(model, out)

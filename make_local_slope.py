@@ -54,8 +54,8 @@ def host_curves():
                                  latent_heat_vaporization as Lv,
                                  gravity as g)
     out = {}
-    models = sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-                     if not p.name.startswith(("steam_", "diag_"))})
+    from extract_stats import CHANNEL_HOSTS
+    models = sorted(CHANNEL_HOSTS)
     for m in models:
         fields = {v: [] for v in VARS}
         for i in range(3):

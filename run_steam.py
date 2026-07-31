@@ -137,9 +137,8 @@ def run_one(model, i, cfg):
 
 
 if __name__ == "__main__":
-    models = sys.argv[1:] or sorted({
-        p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-        if not p.name.startswith(("steam_", "diag_"))})
+    from extract_stats import CHANNEL_HOSTS
+    models = sys.argv[1:] or sorted(CHANNEL_HOSTS)
     for model in models:
         for cfg in CONFIGS:
             for i in range(3):

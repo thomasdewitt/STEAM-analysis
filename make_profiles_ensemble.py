@@ -35,8 +35,8 @@ STEAM_COLOR = "#C4442A"
 
 
 def models():
-    return sorted({p.name.split("_snap")[0] for p in STATS.glob("*_snap*.npz")
-                   if not p.name.startswith(("steam_", "diag_"))})
+    from extract_stats import CHANNEL_HOSTS
+    return sorted(CHANNEL_HOSTS)
 
 
 def interp(z, v):

@@ -61,8 +61,8 @@ def do_steam(nc_path):
 
 
 if __name__ == "__main__":
-    from extract_stats import ADAPTERS
-    for model in ADAPTERS:
+    from extract_stats import CHANNEL_HOSTS
+    for model in CHANNEL_HOSTS:
         for i in range(3):
             if (STATS / f"{model}_snap{i}.npz").exists():
                 do_host(model, i)

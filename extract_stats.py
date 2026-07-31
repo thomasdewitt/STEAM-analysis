@@ -271,6 +271,11 @@ ADAPTERS = {
 # The comparison datasets below the RCE_large300 set are single snapshots.
 SINGLE_SNAPSHOT = {"twpice", "les_cm1", "les_sam", "les_dales", "les_icon_lem"}
 
+# The channel ensemble is exactly the RCE_large300 hosts: everything the
+# STEAM channel runs and their figures iterate over. The single-snapshot
+# comparison datasets belong to the matched-LES comparison, not here.
+CHANNEL_HOSTS = [m for m in ADAPTERS if m not in SINGLE_SNAPSHOT]
+
 
 def reduce_snapshot(model, i):
     z, T, qv, qc, qi, p_surf = ADAPTERS[model](i)
