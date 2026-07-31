@@ -8,8 +8,8 @@
 # so rerunning this script resumes where it stopped.
 #
 #   1. RCEMIP channel comparison  (27 runs, GPU, ~15 min)
-#   2. production squares + strip nests (20 GPU squares ~3 min each,
-#      CPU nests pipelined behind them)
+#   2. production squares + strip nests (GPU square then its own CPU nest,
+#      one member at a time)
 #   3. analysis: deltas, channel fractal + PDFs, square-level Haar
 #      (the diagnostic that caught the bug — validation), square
 #      fractal/size distributions, strip-nest multifractal appendix
@@ -17,18 +17,14 @@ set -e
 cd "$(dirname "$0")"
 PY=.venv/bin/python
 
-# Hard memory cap on the run steps. run_production_squares.py pipelines a GPU
-# square against the previous member's CPU nest, and at their peaks that is
-# ~18 + ~31.5 GB on a 60 GB box. A preflight cannot catch it: both processes
-# ramp gradually and each passes its own start-of-run check while the other
-# has barely allocated, so the collision only exists later, when no
-# checkpoint is looking. A cgroup cap is enforced continuously, which is the
-# only thing that matches that failure mode. The victim is inside the scope
-# and both halves of the driver are restartable -- members whose .nc exists
-# are skipped, nests whose group exists are skipped -- so an OOM-killed
-# member is simply redone on the next run, and the login session is
-# protected absolutely.
-CAP="systemd-run --user --scope -p MemoryMax=50G -p MemorySwapMax=0 --same-dir"
+# Safety net on the run steps: a single process with one peak at a time, now
+# that run_production_squares.py runs each square and then its own nest
+# sequentially (the square-against-nest pipelining, and with it the
+# co-residency hazard this cap was written for, is gone). The victim is inside
+# the scope and the driver is restartable -- members whose .nc exists are
+# skipped, nests whose group exists are skipped -- so an OOM-killed member is
+# simply redone on the next run, and the login session is protected absolutely.
+CAP="systemd-run --user --scope -p MemoryMax=55G -p MemorySwapMax=0 --same-dir"
 
 echo "=== [1/3] RCEMIP channels ($(date +%H:%M)) ==="
 $CAP $PY run_steam.py

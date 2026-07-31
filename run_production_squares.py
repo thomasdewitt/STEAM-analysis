@@ -10,8 +10,8 @@ Each member: 2048 x 2048 at dx = 3 km (6144 km square), outer scale
 L/4 = 1536 km, constant 10 m spheroscale, H_h = 0.45, c for C1 = 0.05
 under the 2026-07-27 calibration (C1 = 3.097 c^1.8), anchored bounds
 (supp S2 as amended), snap0 profile, seeds 2000 + member. After each
-square finishes, its strip nest (spanning x, 48 km wide, dx = 375 m)
-runs on the CPU while the next square uses the GPU.
+square finishes, its own strip nest (spanning x, 48 km wide, dx = 375 m)
+runs on the CPU, before the next square starts.
 
 Restartable: members whose .nc exists are skipped; nests whose group
 exists are skipped.
@@ -19,10 +19,8 @@ exists are skipped.
 Usage: python run_production_squares.py [model ...]
 """
 
-import multiprocessing
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -93,7 +91,7 @@ def run_square(model, member):
 
 
 def run_nest(path_str):
-    """Strip nest on the CPU; runs in a worker process."""
+    """Strip nest on the CPU, after its own square."""
     import netCDF4
     from steam.simulate import refine
     with netCDF4.Dataset(path_str) as ds:
@@ -113,20 +111,18 @@ def run_nest(path_str):
 
 def main():
     models = sys.argv[1:] or list(MODELS)
-    # spawn, not fork: the parent holds a warm CUDA context and torch
-    # thread pool after the first square; a forked worker inherits a
-    # locked intra-op pool and deadlocks on its first big CPU op
-    # (observed 2026-07-27: futex hang inside F.interpolate).
-    nest_pool = ProcessPoolExecutor(
-        max_workers=1, mp_context=multiprocessing.get_context("spawn"))
-    pending = []
+    # Strictly sequential: each member's square, then that member's own nest,
+    # in this one process. The nest used to run in a spawned worker pipelined
+    # against the NEXT square, which was worth it when it took ~660 s of CPU
+    # with the GPU otherwise idle. It no longer does, and the overlap was the
+    # only way two multi-tens-of-GB peaks could ever be live at once
+    # (Thomas's ruling, 2026-07-30: nesting stays completely separate from
+    # the main cascade). Restartability is unchanged -- squares whose .nc
+    # exists and nests whose group exists are still skipped.
     for model in models:
         for member in range(N_MEMBERS):
             path = run_square(model, member)
-            pending.append(nest_pool.submit(run_nest, str(path)))
-    for future in pending:
-        future.result()
-    nest_pool.shutdown()
+            run_nest(str(path))
     print("all squares and nests complete", flush=True)
 
 
