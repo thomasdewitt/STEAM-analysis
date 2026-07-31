@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render nests per main.tex Sect. 'Nested domain simulations' (2026-07-29).
 
-From the icon_lem production square (member m00):
+From a production square (member m00 of each profile; pass the parent):
   nest A: 24 x 24 km, full depth, dx = 46.875 m  (512 x 512; 6 octaves
           below the parent's 3 km grid). Site: the 8x8-parent-cell window
           whose cloud fraction at z ~ 1 km is closest to 0.2.
@@ -31,7 +31,7 @@ from steam.thermodynamics import compute_diagnostics
 
 HERE = Path(__file__).parent
 PARENT = (Path(sys.argv[1]) if len(sys.argv) > 1
-          else HERE / "runs" / "steam_sq10_icon_lem_m00.nc")
+          else HERE / "runs" / "steam_sq10_ukmo_ra1t_m00.nc")
 CLOUD_KGKG = 0.01e-3
 CF_TARGET = 0.2
 

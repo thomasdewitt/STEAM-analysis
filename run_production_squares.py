@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Production square-domain ensembles + strip nests (Thomas, 2026-07-27).
 
-Two cases, 10 members each:
-  - icon_lem  (the existing case)
-  - ukmo_ra1t (the lower-CF case: smallest STEAM integrated cloud
-    fraction across host profiles in the constant-10m comparison set)
+Two cases, 3 members each (the 2026-07-31 CF-extreme pair):
+  - ukmo_ra1t (the low-CF end: smallest STEAM integrated cloud fraction
+    across host profiles in the constant-10m comparison set)
+  - icon_nwp  (the high-CF end of the same comparison set)
 
 Each member: 2048 x 2048 at dx = 3 km (6144 km square), outer scale
 L/4 = 1536 km, constant 10 m spheroscale, H_h = 0.45, c for C1 = 0.05
@@ -38,7 +38,7 @@ from steam.constants import latent_heat_vaporization as Lv
 HERE = Path(__file__).parent
 STATS = HERE / "stats"
 RUNS = HERE / "runs"
-MODELS = ("icon_lem", "ukmo_ra1t")
+MODELS = ("ukmo_ra1t", "icon_nwp")
 N_MEMBERS = 3   # trimmed from 10 (Thomas, 2026-07-28: runtime)
 SPHEROSCALE_CONSTANT = 10.0
 DOMAIN_HEIGHT = 20000.0

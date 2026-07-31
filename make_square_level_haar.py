@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Single-level horizontal Haar fluctuation across the 10-member squares.
+"""Single-level horizontal Haar fluctuation across the square members.
 
 Short diagnostic (Thomas, 2026-07-27): for each production case
-(icon_lem, ukmo_ra1t), extract one height level from all 10 square
+(ukmo_ra1t, icon_nwp), extract one height level from all square
 members (6144 km, dx = 3 km, c = 0.101), stack the members along a new
 axis, and compute the mean absolute Haar fluctuation along x in ONE
 scaleinvariance call (members and y pooled as independent realizations,
@@ -27,7 +27,7 @@ import scaleinvariance as si
 HERE = Path(__file__).parent
 RUNS = HERE / "runs"
 LEVEL_M = float(sys.argv[1]) if len(sys.argv) > 1 else 7000.0
-MODELS = ("icon_lem", "ukmo_ra1t")
+MODELS = ("ukmo_ra1t", "icon_nwp")
 N_MEMBERS = 3   # trimmed from 10 (Thomas, 2026-07-28: runtime)
 DX = 3000.0
 H_H = 0.45
@@ -56,7 +56,7 @@ def stacked_level(model, name):
 def main():
     out = {}
     fig, axes = plt.subplots(1, 3, figsize=(11.5, 4.2))
-    colors = {"icon_lem": "#1764ab", "ukmo_ra1t": "#e76f51"}
+    colors = {"ukmo_ra1t": "#e76f51", "icon_nwp": "#1764ab"}
     z_used = None
     for name, ax in zip(("h", "qt", "flux"), axes):
         for model in MODELS:
@@ -67,9 +67,9 @@ def main():
             out[f"{model}_{name}_F"] = F
             ax.loglog(lags * DX / 1000, F, color=colors[model], lw=1.3,
                       label=model)
-        # Reference slope pegged to the icon_lem central value.
-        ref_lags = out[f"icon_lem_{name}_lags"] * DX / 1000
-        ref_F = out[f"icon_lem_{name}_F"]
+        # Reference slope pegged to the first model's central value.
+        ref_lags = out[f"{MODELS[0]}_{name}_lags"] * DX / 1000
+        ref_F = out[f"{MODELS[0]}_{name}_F"]
         mid = len(ref_lags) // 2
         slope = H_H if name != "flux" else 0.0
         span = 10 ** 0.9

@@ -47,7 +47,7 @@ import numpy as np
 
 HERE = Path(__file__).parent
 _pos = [a for a in sys.argv[1:] if not a.startswith("--")]
-PARENT = Path(_pos[0]) if _pos else HERE / "runs" / "steam_sq10_icon_lem_m00.nc"
+PARENT = Path(_pos[0]) if _pos else HERE / "runs" / "steam_sq10_ukmo_ra1t_m00.nc"
 GROUP = _pos[1] if len(_pos) > 1 else "refinements/r0"
 TAG = (sys.argv[sys.argv.index("--tag") + 1]
        if "--tag" in sys.argv else "")

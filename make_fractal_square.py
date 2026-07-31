@@ -6,7 +6,7 @@ integrated optical depth, objscale ensemble correlation dimension +
 finite-domain area-distribution exponent), applied per case to the
 production square ensembles steam_sq10_{model}_m{00..} (N_MEMBERS)
 (6144 x 6144 km at dx = 3 km, outer scale 1536 km, constant 10 m
-spheroscale, c = 0.1010; 2026-07-27 fixed code). All 10 members pass to
+spheroscale, c = 0.1010; 2026-07-27 fixed code). All members pass to
 objscale in one call per case.
 
 The square geometry is the point: the channel is too narrow for size
@@ -30,7 +30,7 @@ STATS = HERE / "stats"
 RUNS = HERE / "runs"
 TAU_THRESHOLD = 1.0
 DX = 3000.0
-MODELS = ("icon_lem", "ukmo_ra1t")
+MODELS = ("ukmo_ra1t", "icon_nwp")
 N_MEMBERS = 3   # trimmed from 10 (Thomas, 2026-07-28: runtime)
 
 spec = importlib.util.spec_from_file_location(
@@ -105,7 +105,7 @@ def figure():
         "legend.frameon": False, "figure.dpi": 200,
     })
     d = np.load(STATS / "fractal_square.npz")
-    colors = {"icon_lem": "#1764ab", "ukmo_ra1t": "#e76f51"}
+    colors = {"ukmo_ra1t": "#e76f51", "icon_nwp": "#1764ab"}
 
     fig, axes2 = plt.subplots(2, 2, figsize=(9.6, 8.8))
     axes = axes2.ravel()
