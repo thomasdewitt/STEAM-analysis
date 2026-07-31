@@ -17,6 +17,10 @@ see CLAUDE.md gotcha). ICON's z comes from inverting its frozen-MSE file:
 zf = (fmse - 1004.64*ta - 2500800*hus + 333700*cli) / 9.80665 (its constants,
 not steam's -- used only for z recovery).
 
+Five single-snapshot comparison datasets are handled by the same machinery:
+twpice (SAM-TWPICE, 100 m, 2048^2 x 255) and les_{cm1,sam,dales,icon_lem}
+(RCEMIP RCE_small_les300, 200 m).
+
 Usage: python extract_stats.py [model ...]   (default: all)
 """
 
@@ -55,7 +59,7 @@ def read_var(path, name, index=None):
 
 
 # ── adapters: yield (z_1d_m, T, qv_mr, qc_mr, qi_mr, p_surface) bottom-up,
-#    fields shaped (nz, ny, nx), one call per snapshot index 0..2 ─────────────
+#    fields shaped (nz, ny, nx), one call per snapshot index ────────────────
 
 
 def sam(i):
@@ -71,8 +75,8 @@ def sam(i):
         pa[0].mean(dtype=np.float64))
 
 
-def cm1(i):
-    files = sorted((DATA / "cm1").glob("CM1_RCE_large300_3D_allvars_hour*.nc"))
+def _cm1(subdir, i):
+    files = sorted((DATA / subdir).glob("CM1_RCE_*300_3D_allvars_hour*.nc"))
     path = files[i]
     z = read_var(path, "z")
     T = read_var(path, "ta", 0)
@@ -81,6 +85,14 @@ def cm1(i):
     qi = spec_to_mr(read_var(path, "cli", 0))
     pa = read_var(path, "pa", 0)
     return z, T, qv, qc, qi, float(pa[0].mean(dtype=np.float64))
+
+
+def cm1(i):
+    return _cm1("cm1", i)
+
+
+def les_cm1(i):
+    return _cm1("les_cm1", i)
 
 
 def _ukmo(subdir, i):
@@ -172,13 +184,92 @@ def icon_nwp(i):
                  "fmse_3d", i)
 
 
+def les_icon_lem(i):
+    d = DATA / "les_icon_lem"
+    return _icon(d / "ICON_LEM_CRM-RCE_small_les_300-3D_t3.nc",
+                 d / "ICON_LEM_CRM-RCE_small_les_300-3D_FMSE_t3.nc",
+                 "fmse_3d", i)
+
+
+def les_sam(i):
+    path = (DATA / "les_sam"
+            / "RCEMIP_SST300_480x480x146-200m-2s_480_0002160000.nc")
+    # Native SAM names, not the RCEMIP ones (Known RCEMIP Bugs, Sec. 21).
+    z = read_var(path, "z")
+    T = read_var(path, "TABS", 0)
+    qv = read_var(path, "QV", 0) / 1000.0     # g/kg mixing ratio already
+    qc = read_var(path, "QN", 0) / 1000.0     # QN = cloud water + cloud ice
+    qi = np.zeros_like(qc)
+    p = read_var(path, "p")                   # 1-D, mb
+    return z, T, qv, qc, qi, float(p[0]) * 100.0
+
+
+def les_dales(i):
+    d = DATA / "les_dales"
+    # Known RCEMIP Bugs: DALES 3-D ta is unreliable above the tropopause
+    # (ozone misconfiguration); the troposphere used here is unaffected.
+    z = read_var(d / "DALES_RCE_small_les300_3D_ta_t30.nc", "zt")
+    T = read_var(d / "DALES_RCE_small_les300_3D_ta_t30.nc", "ta", 0)
+    qv = spec_to_mr(read_var(d / "DALES_RCE_small_les300_3D_hus_t30.nc", "hus", 0))
+    qc = spec_to_mr(read_var(d / "DALES_RCE_small_les300_3D_clw_t30.nc", "clw", 0))
+    qi = spec_to_mr(read_var(d / "DALES_RCE_small_les300_3D_cli_t30.nc", "cli", 0))
+    return z, T, qv, qc, qi, P0_DEFAULT       # no pa in the DALES output
+
+
+def _twpice_field(path, name, y_first):
+    """Read a TWPICE (time, ., ., z) field into a contiguous (z, y, x) float32
+    array, one horizontal slab at a time. A single 2048^2 x 255 field is 4.3 GB
+    (8.6 GB for the float64 MSE), so the whole file is never held at once, and
+    the z-last file layout would make per-level reductions cache-hostile."""
+    ds = netCDF4.Dataset(path)
+    ds.set_auto_mask(False)
+    v = ds.variables[name]
+    nz = v.shape[3]
+    ny, nx = (v.shape[1], v.shape[2]) if y_first else (v.shape[2], v.shape[1])
+    field = np.empty((nz, ny, nx), dtype=np.float32)
+    for a in range(0, v.shape[1], 128):
+        slab = np.asarray(v[0, a:a + 128])
+        if y_first:
+            field[:, a:a + 128, :] = slab.transpose(2, 0, 1)
+        else:
+            field[:, :, a:a + 128] = slab.transpose(2, 1, 0)
+    ds.close()
+    return field
+
+
+def twpice(i):
+    d = DATA / "twpice"
+    qv_file = d / "TWPICE_LPT_3D_QV_0000003450.nc"
+    z = read_var(qv_file, "z")
+    pres = read_var(qv_file, "pres")                       # 1-D, mb
+    # g/kg SAM mixing ratios already; axis order is (y, x, z) here but
+    # (x, y, z) in the MSE file.
+    qv = _twpice_field(qv_file, "QV", True)
+    qc = _twpice_field(d / "TWPICE_LPT_3D_QC_0000003450.nc", "QC", True)
+    qi = _twpice_field(d / "TWPICE_LPT_3D_QI_0000003450.nc", "QI", True)
+    qv /= 1000.0
+    qc /= 1000.0
+    qi /= 1000.0
+    # No temperature field is archived: MSE is in K, = T + (g*z + Lv*qv)/cp
+    # with steam's constants. Invert in place so T never costs a second array.
+    T = _twpice_field(d / "TWPICE_LPT_3D_MSE_0000003450.nc", "MSE", False)
+    for k in range(z.size):
+        T[k] -= (g * z[k] + Lv * qv[k]) / cp
+    return z, T, qv, qc, qi, float(pres[0]) * 100.0
+
+
 ADAPTERS = {
     "sam": sam, "cm1": cm1,
     "ukmo_casim": ukmo_casim, "ukmo_ra1t": ukmo_ra1t,
     "ukmo_ra1t_nocloud": ukmo_ra1t_nocloud,
     "scale": scale, "ucla": ucla,
     "icon_lem": icon_lem, "icon_nwp": icon_nwp,
+    "twpice": twpice, "les_cm1": les_cm1, "les_sam": les_sam,
+    "les_dales": les_dales, "les_icon_lem": les_icon_lem,
 }
+
+# The comparison datasets below the RCE_large300 set are single snapshots.
+SINGLE_SNAPSHOT = {"twpice", "les_cm1", "les_sam", "les_dales", "les_icon_lem"}
 
 
 def reduce_snapshot(model, i):
@@ -187,21 +278,26 @@ def reduce_snapshot(model, i):
     assert np.all(np.diff(z) > 0), f"{model}: z not increasing"
     nz = z.size
     assert T.shape[0] == nz, f"{model}: shape {T.shape} vs nz {nz}"
-    for name, a in (("T", T), ("qv", qv), ("qc", qc), ("qi", qi)):
-        bad = ~np.isfinite(a) | (np.abs(a) > 1e8)
-        assert not bad.any(), f"{model} snap{i}: {name} has {bad.sum()} bad"
 
     h_mean = np.empty(nz)
     h_var = np.empty(nz)
     qt_mean = np.empty(nz)
     qt_var = np.empty(nz)
     cloud_fraction = np.empty(nz)
+    # Level by level: TWPICE is 2048^2 x 255, so whole-field temporaries (even
+    # a validity mask) are gigabytes.
     for k in range(nz):
-        hk = (cp * T[k].astype(np.float64) + g * z[k]
-              + Lv * qv[k].astype(np.float64))
-        qtk = (qv[k].astype(np.float64) + qc[k].astype(np.float64)
-               + qi[k].astype(np.float64))
-        condk = qc[k].astype(np.float64) + qi[k].astype(np.float64)
+        Tk = T[k].astype(np.float64)
+        qvk = qv[k].astype(np.float64)
+        qck = qc[k].astype(np.float64)
+        qik = qi[k].astype(np.float64)
+        for name, a in (("T", Tk), ("qv", qvk), ("qc", qck), ("qi", qik)):
+            bad = ~np.isfinite(a) | (np.abs(a) > 1e8)
+            assert not bad.any(), (
+                f"{model} snap{i}: {name} has {bad.sum()} bad at level {k}")
+        hk = cp * Tk + g * z[k] + Lv * qvk
+        qtk = qvk + qck + qik
+        condk = qck + qik
         h_mean[k] = hk.mean()
         h_var[k] = hk.var()
         qt_mean[k] = qtk.mean()
@@ -227,5 +323,5 @@ def reduce_snapshot(model, i):
 if __name__ == "__main__":
     wanted = sys.argv[1:] or list(ADAPTERS)
     for model in wanted:
-        for i in range(3):
+        for i in range(1 if model in SINGLE_SNAPSHOT else 3):
             reduce_snapshot(model, i)
