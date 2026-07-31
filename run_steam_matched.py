@@ -111,7 +111,13 @@ def covers(model, out_nc):
 
 def run_one(model):
     name = f"steam_matched_{model}"
-    if (STATS / f"{name}.npz").exists():
+    out_nc = RUNS / f"{name}.nc"
+    # Skip on the .nc, not the stats .npz (2026-07-31): the .nc is the primary
+    # output and downstream analysis (fractal masks, renders) needs it, so a
+    # campaign that deleted the .nc must regenerate. Same convention as the
+    # square driver. The post-processing below is deterministic in the seed,
+    # so rerunning rewrites identical stats.
+    if out_nc.exists():
         print(f"{name} exists, skipping", flush=True)
         return
     nx, dx = MATCHED[model]
@@ -128,7 +134,6 @@ def run_one(model):
     h_upper = max(cp * 300.0 + Lv * qt_sat_surface,
                   float(h_profile.max()) + 1.0)
     h_lower = float(h_profile.min()) - 10.0 * cp
-    out_nc = RUNS / f"{name}.nc"
     RUNS.mkdir(exist_ok=True)
     t0 = time.perf_counter()
     simulate(

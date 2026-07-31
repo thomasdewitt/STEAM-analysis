@@ -68,10 +68,30 @@ def compute():
             return_counts=True)
         # 2026-07-29 (Thomas's ruling): squares also get the nested-perimeter
         # distribution exponent (beta) and the individual fractal dimension.
-        # objscale defaults throughout.
+        #
+        # Two departures from objscale's defaults are needed for the PERIMETER
+        # distribution, and only for it (the area fit above uses defaults).
+        # Both come from the same fact: a complete object's nested perimeter is
+        # quantized in units of 2*dx and cannot be smaller than 4*dx, whereas a
+        # truncated one is measured only along its non-nan edges and so can be
+        # any multiple of dx, including values below 4*dx.
+        #   1. min_threshold = 4*dx. The default lower bin edge is the pixel
+        #      length dx, so the bottom bins are reachable ONLY by truncated
+        #      fragments. objscale takes the FIRST bin whose truncated fraction
+        #      exceeds 0.5 as the end of the fit range, so a single stray
+        #      fragment down there set truncation_index to 4 and left zero
+        #      usable bins -- this, not the percolating cluster, is why beta
+        #      came back NaN through 2026-07-29.
+        #   2. bins = 30. The auto range runs from dx to the space-filling
+        #      bound (1.26e10 m), ~6 decades, so the default 100 bins are
+        #      0.06 dex wide -- finer than the 0.176 dex = log10(6/4) gap
+        #      between the two smallest achievable perimeters, leaving bins
+        #      that no complete object can occupy. 30 bins gives 0.20 dex,
+        #      just wider than that gap. beta is insensitive to the choice:
+        #      1.18-1.22 over bins = 15 to 40.
         beta, (blog_bins, blog_counts) = objscale.finite_array_powerlaw_exponent(
             masks, "nested perimeter", x_sizes=sizes[0], y_sizes=sizes[0],
-            return_counts=True)
+            min_threshold=4 * DX, bins=30, return_counts=True)
         ind_dim, ind_log_l, ind_log_p = objscale.individual_fractal_dimension(
             masks, x_sizes=sizes[0], y_sizes=sizes[0], return_values=True)
         cover = float(np.mean([m.mean() for m in masks]))
@@ -116,12 +136,12 @@ def figure():
                        label=f"{model}: $D_2$ = {float(d[f'{model}_dim']):.2f}")
         axes[1].plot(d[f"{model}_sd_log_bins"] - 6.0,
                      d[f"{model}_sd_log_counts"], color=c, lw=1.4,
-                     label=(f"{model}: slope = "
+                     label=(f"{model}: $\\alpha$ = "
                             f"{float(d[f'{model}_exponent']):.2f}, "
                             f"cover = {float(d[f'{model}_cover']):.2f}"))
         axes[2].plot(d[f"{model}_beta_log_bins"] - 3.0,
                      d[f"{model}_beta_log_counts"], color=c, lw=1.4,
-                     label=(f"{model}: slope = "
+                     label=(f"{model}: $\\beta$ = "
                             f"{float(d[f'{model}_beta']):.2f}"))
         axes[3].plot(d[f"{model}_ind_log_l"] - 3.0,
                      d[f"{model}_ind_log_p"] - 3.0, color=c, lw=1.4,
@@ -131,10 +151,11 @@ def figure():
                 title=f"$\\tau>1$ mask correlation integral "
                       f"({N_MEMBERS} members each)")
     axes[1].set(xlabel="log$_{10}$ area [km$^2$]", ylabel="log$_{10}$ counts",
-                title="area distribution, truncation-corrected")
+                title="area distribution $n(A) \\propto A^{-(1+\\alpha)}$, truncation-corrected")
     axes[2].set(xlabel="log$_{10}$ nested perimeter [km]",
                 ylabel="log$_{10}$ counts",
-                title="nested-perimeter distribution, truncation-corrected")
+                title="nested-perimeter distribution "
+                      "$n(P) \\propto P^{-(1+\\beta)}$, truncation-corrected")
     axes[3].set(xlabel="log$_{10}$ length scale [km]",
                 ylabel="log$_{10}$ filled perimeter [km]",
                 title="individual perimeter-area scaling")
