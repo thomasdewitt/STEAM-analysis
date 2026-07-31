@@ -68,30 +68,10 @@ def compute():
             return_counts=True)
         # 2026-07-29 (Thomas's ruling): squares also get the nested-perimeter
         # distribution exponent (beta) and the individual fractal dimension.
-        #
-        # Two departures from objscale's defaults are needed for the PERIMETER
-        # distribution, and only for it (the area fit above uses defaults).
-        # Both come from the same fact: a complete object's nested perimeter is
-        # quantized in units of 2*dx and cannot be smaller than 4*dx, whereas a
-        # truncated one is measured only along its non-nan edges and so can be
-        # any multiple of dx, including values below 4*dx.
-        #   1. min_threshold = 4*dx. The default lower bin edge is the pixel
-        #      length dx, so the bottom bins are reachable ONLY by truncated
-        #      fragments. objscale takes the FIRST bin whose truncated fraction
-        #      exceeds 0.5 as the end of the fit range, so a single stray
-        #      fragment down there set truncation_index to 4 and left zero
-        #      usable bins -- this, not the percolating cluster, is why beta
-        #      came back NaN through 2026-07-29.
-        #   2. bins = 30. The auto range runs from dx to the space-filling
-        #      bound (1.26e10 m), ~6 decades, so the default 100 bins are
-        #      0.06 dex wide -- finer than the 0.176 dex = log10(6/4) gap
-        #      between the two smallest achievable perimeters, leaving bins
-        #      that no complete object can occupy. 30 bins gives 0.20 dex,
-        #      just wider than that gap. beta is insensitive to the choice:
-        #      1.18-1.22 over bins = 15 to 40.
+        # objscale defaults throughout.
         beta, (blog_bins, blog_counts) = objscale.finite_array_powerlaw_exponent(
             masks, "nested perimeter", x_sizes=sizes[0], y_sizes=sizes[0],
-            min_threshold=4 * DX, bins=30, return_counts=True)
+            return_counts=True)
         ind_dim, ind_log_l, ind_log_p = objscale.individual_fractal_dimension(
             masks, x_sizes=sizes[0], y_sizes=sizes[0], return_values=True)
         cover = float(np.mean([m.mean() for m in masks]))
