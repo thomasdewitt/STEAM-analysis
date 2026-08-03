@@ -41,9 +41,11 @@ grid_units) is printed alongside as an empirical measure of how much that
 mixing bends the curve.
 
   iterate runs round2 in a fixed-point loop: lambda_{i+1} = lambda_i * r_i,
-          stopping when |r_i - 1| < --tol. The response is slightly
-          sublinear in lambda (the bound projection clips the hotter
-          fields), so a single round-2 pass lands near but not on r = 1.
+          stopping when |r_i - 1| < --tol. Under the pre-2026-08-03
+          procedure the bound projection clipped the hotter fields and
+          made the response sublinear in lambda; with the far bounds now
+          used (see run_case) the response should be linear and iterate
+          is retained as a convergence check rather than a necessity.
           Writes round2_Hh<H>_iter{i}.npz and the matching figure.
 
 Both rounds render the same 1x2 figure (h left, qt right) from their own
@@ -146,8 +148,16 @@ def run_case(hurst_horizontal, haar_to_mhat):
                 h_profile, qt_profile, nx, ny, dx, dy,
                 outer_scale, spheroscale, domain_height, profile_dz,
                 output_path, seed=seed,
-                h_min=0.9 * h_profile.min(), h_max=1.1 * h_profile.max(),
-                qt_min=0, qt_max=1.5 * qt_profile.max(),
+                # Bounds pushed far beyond any reachable value (Thomas's
+                # ruling, 2026-08-03): lambda is a geometric delivery
+                # constant, but the bound projection is case-specific and
+                # was clipping the calibration fields -- the same lambda is
+                # then applied to subvolumes where bounds are never hit.
+                # Far bounds keep the actual-STEAM path (taper, projection
+                # machinery all still execute) while guaranteeing neither
+                # scalar ever touches a bound in practice.
+                h_min=h_profile.min() - 1e7, h_max=h_profile.max() + 1e7,
+                qt_min=-1e3, qt_max=1e3,
                 n_scale_classes_per_dyad=1,
                 hurst_horizontal=hurst_horizontal,
                 haar_to_mhat=haar_to_mhat,
