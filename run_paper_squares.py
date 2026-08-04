@@ -17,15 +17,16 @@ spheroscale, H_h and lambda at package defaults, anchored bounds
 
 Per member, strictly serially:
   1. square (save_for_refinement=True) + compute_diagnostics
-  2. nest A: centered 64x64 km, full depth, dx = 62.5 m
-     (parent cells 992:1056), save_for_refinement=True, + diagnostics
-  3. nest B: refines nest A, centered 16x16 km, lowest 4 km,
-     dx = 15.625 m (nest-A cells 384:640), + diagnostics
-  4. extraction: 2D tau field (make_fractal_square.py methodology),
-     steam_stats + diag stats for the square, keepers file with both
-     nest groups (h, qt, T, qc, qi + coords/dz/spheroscale only,
+  2. nest A: centered 32x32 km, full depth, dx = 62.5 m
+     (parent cells 1008:1040), + diagnostics. (Was 64 km at 1024^2;
+     halved 2026-08-04 after the sweep was OOM-killed at 53.5 GB
+     in-process. Nest B, 16 km at 15.625 m, is PAUSED with it -- so no
+     refinement state is stored for nest A.)
+  3. extraction: 2D tau field (make_fractal_square.py methodology),
+     steam_stats + diag stats for the square, keepers file with the
+     nest group (h, qt, T, qc, qi + coords/dz/spheroscale only,
      blosc-zstd)
-  5. delete the parent .nc, log wall time and df
+  4. delete the parent .nc, log wall time and df
 
 Restartable at stage granularity: keepers + tau present with the parent
 .nc absent marks a member complete; while the parent exists, the square,
@@ -76,14 +77,13 @@ DOMAIN_HEIGHT = 20000.0
 PROFILE_DZ = 50.0
 SQUARE_SHAPE = (2048, 2048, 211)   # ruled expectation; mismatch is fatal
 
-# Nest A: centered 64x64 km, full depth, target dx = 62.5 m
-NEST_A = dict(x_start=992, x_stop=1056, y_start=992, y_stop=1056,
+# Nest A: centered 32x32 km, full depth, target dx = 62.5 m.
+# (2026-08-04 afternoon ruling: dx kept, domain halved from 64 km after the
+# 1024^2 nest OOM-killed the sweep at 53.5 GB in-process; nest B paused, so
+# nest A stores no refinement state.)
+NEST_A = dict(x_start=1008, x_stop=1040, y_start=1008, y_stop=1040,
               dx=62.5, dy=62.5)
 NEST_A_GROUP = "refinements/r0"
-# Nest B: refines nest A, centered 16x16 km, lowest 4 km, dx = 15.625 m
-NEST_B = dict(x_start=384, x_stop=640, y_start=384, y_stop=640,
-              dx=15.625, dy=15.625, z_min=0.0, z_max=4000.0)
-NEST_B_GROUP = "refinements/r1"
 
 TAU_THRESHOLD = 1.0        # applied downstream; the field itself is stored
 
@@ -259,8 +259,7 @@ def extract_keepers(out_nc, out_keep):
             netCDF4.Dataset(tmp, "w") as dst:
         dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
         dst.source_parent = out_nc.name
-        for label, group in (("nest_a", NEST_A_GROUP),
-                             ("nest_b", NEST_B_GROUP)):
+        for label, group in (("nest_a", NEST_A_GROUP),):
             grp = src
             for part in group.split("/"):
                 grp = grp.groups[part]
@@ -289,15 +288,13 @@ def verify_or_scrap(out_nc):
             assert n_inc == 10, f"square increments incomplete ({n_inc}/10)"
             refinements = (ds.groups["refinements"].groups
                            if "refinements" in ds.groups else {})
-            for tag, n_ladder in (("r0", 14), ("r1", None)):
-                if tag not in refinements:
-                    continue
-                grp = refinements[tag]
+            assert set(refinements) <= {"r0"}, \
+                f"unexpected refinement groups {sorted(refinements)}"
+            for tag, grp in refinements.items():
                 assert "qt" in grp.variables, f"{tag} lacks qt"
-                if n_ladder is not None:
-                    n = len(grp.groups["class_increments"].groups)
-                    assert n == n_ladder, \
-                        f"{tag} increments incomplete ({n}/{n_ladder})"
+                nx = len(grp.dimensions["x"])
+                assert nx == 512, \
+                    f"{tag} is an old-spec nest (nx={nx}, spec 512)"
     except Exception as exc:
         print(f"  {out_nc.name} failed integrity ({exc}); "
               f"deleting and rerunning the member", flush=True)
@@ -320,9 +317,7 @@ def run_member(set_tag, member):
           flush=True)
 
     run_square(set_tag, member, out_nc)
-    run_nest(out_nc, "A", NEST_A, NEST_A_GROUP, "/", 1024, (900, 1060), True)
-    run_nest(out_nc, "B", NEST_B, NEST_B_GROUP, NEST_A_GROUP, 1024,
-             (380, 470), False)
+    run_nest(out_nc, "A", NEST_A, NEST_A_GROUP, "/", 512, (900, 1060), False)
 
     # Extraction (all products before the parent is deleted)
     extract_tau(out_nc, out_tau)
