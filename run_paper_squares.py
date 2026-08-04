@@ -7,7 +7,9 @@ Two sets of 10 members each, identical except for the flux noise scale
   C1003: C1 = 0.03  ->  c = (0.03/1.681)^(1/1.8)
   C1010: C1 = 0.10  ->  c = (0.10/1.681)^(1/1.8)
 
-Member config (2026-08-04 ruling): TWP-ICE snap0 profile, 2048 x 2048 at
+Member config (2026-08-04 ruling): ukmo_ra1t snap0 profile (the
+least-cloudy of the comparison set; was TWP-ICE until its m00 delivered
+tau>1 cover 0.95), 2048 x 2048 at
 dx = 1 km (2048 km square), outer scale L = 1024 km under the NEW
 convention L = (longest domain dimension) / 2 (run_production_squares.py
 used the old /4 -- overridden here on Thomas's ruling), constant 10 m
@@ -133,7 +135,10 @@ def check_shape(what, got, expect_xy, z_range):
 
 def run_square(set_tag, member, out_nc):
     if not out_nc.exists():
-        src = np.load(STATS / "twpice_snap0.npz")
+        # ukmo_ra1t: the least-cloudy profile of the comparison set
+        # (2026-08-04 ruling, replacing TWP-ICE: the TWPICE-profile m00
+        # came out at tau>1 cover 0.95 -- "way too much cloud").
+        src = np.load(STATS / "ukmo_ra1t_snap0.npz")
         h_profile = src["h_profile"]
         qt_profile = src["qt_profile"]
         z = src["z_profile"]
