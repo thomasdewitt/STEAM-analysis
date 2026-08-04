@@ -23,9 +23,10 @@ Per member, strictly serially:
      (parent cells 1008:1040), save_for_refinement=True, + diagnostics.
      (Was 64 km at 1024^2; halved 2026-08-04 after the sweep was
      OOM-killed at 53.5 GB in-process.)
-  3. nest B: refines nest A, centered 16x16 km, z = 1-5 km,
-     dx = 15.625 m (nest-A cells 128:384), + diagnostics.
-     (Reinstated after the m00 review; elevated per the same ruling.)
+  3. nest B: refines nest A, centered 8x8 km, z = 1-5 km,
+     dx = 7.8125 m (nest-A cells 192:320), + diagnostics.
+     (Reinstated after the m00 review; elevated + one octave deeper
+     per the same day's rulings.)
   4. extraction: 2D tau field (make_fractal_square.py methodology),
      steam_stats + diag stats for the square, keepers file with the
      parent square as qc + qi only plus both nest groups at
@@ -87,12 +88,13 @@ SQUARE_SHAPE = (2048, 2048, 211)   # ruled expectation; mismatch is fatal
 NEST_A = dict(x_start=1008, x_stop=1040, y_start=1008, y_stop=1040,
               dx=62.5, dy=62.5)
 NEST_A_GROUP = "refinements/r0"
-# Nest B: refines nest A, centered 16x16 km, z = 1-5 km (elevated, so it
-# stores p_bottom from the parent pressure), dx = 15.625 m (reinstated
-# after the m00 review; 16 km = nest-A cells 128:384 now that nest A is
-# 512^2).
-NEST_B = dict(x_start=128, x_stop=384, y_start=128, y_stop=384,
-              dx=15.625, dy=15.625, z_min=1000.0, z_max=5000.0)
+# Nest B: refines nest A, centered 8x8 km, z = 1-5 km (elevated, so it
+# stores p_bottom from the parent pressure), dx = 7.8125 m -- one octave
+# deeper, finest class 15.625 m approaching the 10 m spheroscale
+# (2026-08-04 final ruling; 8 km = nest-A cells 192:320).
+NEST_B = dict(x_start=192, x_stop=320, y_start=192, y_stop=320,
+              dx=7.8125, dy=7.8125, z_min=1000.0, z_max=5000.0)
+NEST_B_DX = 7.8125
 NEST_B_GROUP = "refinements/r1"
 
 TAU_THRESHOLD = 1.0        # applied downstream; the field itself is stored
@@ -308,14 +310,17 @@ def verify_or_scrap(out_nc):
                            if "refinements" in ds.groups else {})
             assert set(refinements) <= {"r0", "r1"}, \
                 f"unexpected refinement groups {sorted(refinements)}"
-            for tag, spec_nx, n_ladder in (("r0", 512, 14), ("r1", 1024, None)):
+            for tag, spec_nx, spec_dx, n_ladder in (
+                    ("r0", 512, 62.5, 14), ("r1", 1024, NEST_B_DX, None)):
                 if tag not in refinements:
                     continue
                 grp = refinements[tag]
                 assert "qt" in grp.variables, f"{tag} lacks qt"
                 nx = len(grp.dimensions["x"])
-                assert nx == spec_nx, \
-                    f"{tag} is an old-spec nest (nx={nx}, spec {spec_nx})"
+                dx = float(grp.getncattr("dx"))
+                assert nx == spec_nx and abs(dx - spec_dx) < 1e-6, \
+                    (f"{tag} is an old-spec nest (nx={nx}, dx={dx}; "
+                     f"spec {spec_nx}, {spec_dx})")
                 if n_ladder is not None:
                     n = len(grp.groups["class_increments"].groups)
                     assert n == n_ladder, \
@@ -344,7 +349,7 @@ def run_member(set_tag, member):
     run_square(set_tag, member, out_nc)
     run_nest(out_nc, "A", NEST_A, NEST_A_GROUP, "/", 512, (900, 1060), True)
     run_nest(out_nc, "B", NEST_B, NEST_B_GROUP, NEST_A_GROUP, 1024,
-             (380, 470), False)
+             (550, 750), False)
 
     # Extraction (all products before the parent is deleted)
     extract_tau(out_nc, out_tau)
