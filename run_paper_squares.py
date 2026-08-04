@@ -20,15 +20,17 @@ spheroscale, H_h and lambda at package defaults, anchored bounds
 Per member, strictly serially:
   1. square (save_for_refinement=True) + compute_diagnostics
   2. nest A: centered 32x32 km, full depth, dx = 62.5 m
-     (parent cells 1008:1040), + diagnostics. (Was 64 km at 1024^2;
-     halved 2026-08-04 after the sweep was OOM-killed at 53.5 GB
-     in-process. Nest B, 16 km at 15.625 m, is PAUSED with it -- so no
-     refinement state is stored for nest A.)
-  3. extraction: 2D tau field (make_fractal_square.py methodology),
+     (parent cells 1008:1040), save_for_refinement=True, + diagnostics.
+     (Was 64 km at 1024^2; halved 2026-08-04 after the sweep was
+     OOM-killed at 53.5 GB in-process.)
+  3. nest B: refines nest A, centered 16x16 km, z = 1-5 km,
+     dx = 15.625 m (nest-A cells 128:384), + diagnostics.
+     (Reinstated after the m00 review; elevated per the same ruling.)
+  4. extraction: 2D tau field (make_fractal_square.py methodology),
      steam_stats + diag stats for the square, keepers file with the
-     nest group (h, qt, T, qc, qi + coords/dz/spheroscale only,
-     blosc-zstd)
-  4. delete the parent .nc, log wall time and df
+     parent square as qc + qi only plus both nest groups at
+     h, qt, T, qc, qi (+ coords/dz/spheroscale, blosc-zstd)
+  5. delete the parent .nc, log wall time and df
 
 Restartable at stage granularity: keepers + tau present with the parent
 .nc absent marks a member complete; while the parent exists, the square,
@@ -81,11 +83,17 @@ SQUARE_SHAPE = (2048, 2048, 211)   # ruled expectation; mismatch is fatal
 
 # Nest A: centered 32x32 km, full depth, target dx = 62.5 m.
 # (2026-08-04 afternoon ruling: dx kept, domain halved from 64 km after the
-# 1024^2 nest OOM-killed the sweep at 53.5 GB in-process; nest B paused, so
-# nest A stores no refinement state.)
+# 1024^2 nest OOM-killed the sweep at 53.5 GB in-process.)
 NEST_A = dict(x_start=1008, x_stop=1040, y_start=1008, y_stop=1040,
               dx=62.5, dy=62.5)
 NEST_A_GROUP = "refinements/r0"
+# Nest B: refines nest A, centered 16x16 km, z = 1-5 km (elevated, so it
+# stores p_bottom from the parent pressure), dx = 15.625 m (reinstated
+# after the m00 review; 16 km = nest-A cells 128:384 now that nest A is
+# 512^2).
+NEST_B = dict(x_start=128, x_stop=384, y_start=128, y_stop=384,
+              dx=15.625, dy=15.625, z_min=1000.0, z_max=5000.0)
+NEST_B_GROUP = "refinements/r1"
 
 TAU_THRESHOLD = 1.0        # applied downstream; the field itself is stored
 
@@ -230,10 +238,10 @@ def extract_tau(out_nc, out_npz):
     print(f"wrote {out_npz.name} (tau>1 cover {cover:.3f})", flush=True)
 
 
-def copy_keeper_group(src, dst):
-    """Copy one nest group keeping only the keeper variables."""
+def copy_keeper_group(src, dst, keep_vars=KEEP_VARS):
+    """Copy one group keeping only the keeper variables."""
     dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
-    names = [n for n in (*KEEP_AUX, *KEEP_VARS) if n in src.variables]
+    names = [n for n in (*KEEP_AUX, *keep_vars) if n in src.variables]
     dims_needed = {d for n in names for d in src.variables[n].dimensions}
     for name, dim in src.dimensions.items():
         if name in dims_needed:
@@ -264,7 +272,12 @@ def extract_keepers(out_nc, out_keep):
             netCDF4.Dataset(tmp, "w") as dst:
         dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
         dst.source_parent = out_nc.name
-        for label, group in (("nest_a", NEST_A_GROUP),):
+        # The parent square survives as condensate only (2026-08-04 ruling:
+        # "retain the full domain... only qc and qi for these").
+        copy_keeper_group(src, dst.createGroup("parent"),
+                          keep_vars=("qc", "qi"))
+        for label, group in (("nest_a", NEST_A_GROUP),
+                             ("nest_b", NEST_B_GROUP)):
             grp = src
             for part in group.split("/"):
                 grp = grp.groups[part]
@@ -293,13 +306,20 @@ def verify_or_scrap(out_nc):
             assert n_inc == 10, f"square increments incomplete ({n_inc}/10)"
             refinements = (ds.groups["refinements"].groups
                            if "refinements" in ds.groups else {})
-            assert set(refinements) <= {"r0"}, \
+            assert set(refinements) <= {"r0", "r1"}, \
                 f"unexpected refinement groups {sorted(refinements)}"
-            for tag, grp in refinements.items():
+            for tag, spec_nx, n_ladder in (("r0", 512, 14), ("r1", 1024, None)):
+                if tag not in refinements:
+                    continue
+                grp = refinements[tag]
                 assert "qt" in grp.variables, f"{tag} lacks qt"
                 nx = len(grp.dimensions["x"])
-                assert nx == 512, \
-                    f"{tag} is an old-spec nest (nx={nx}, spec 512)"
+                assert nx == spec_nx, \
+                    f"{tag} is an old-spec nest (nx={nx}, spec {spec_nx})"
+                if n_ladder is not None:
+                    n = len(grp.groups["class_increments"].groups)
+                    assert n == n_ladder, \
+                        f"{tag} increments incomplete ({n}/{n_ladder})"
     except Exception as exc:
         print(f"  {out_nc.name} failed integrity ({exc}); "
               f"deleting and rerunning the member", flush=True)
@@ -322,7 +342,9 @@ def run_member(set_tag, member):
           flush=True)
 
     run_square(set_tag, member, out_nc)
-    run_nest(out_nc, "A", NEST_A, NEST_A_GROUP, "/", 512, (900, 1060), False)
+    run_nest(out_nc, "A", NEST_A, NEST_A_GROUP, "/", 512, (900, 1060), True)
+    run_nest(out_nc, "B", NEST_B, NEST_B_GROUP, NEST_A_GROUP, 1024,
+             (380, 470), False)
 
     # Extraction (all products before the parent is deleted)
     extract_tau(out_nc, out_tau)
