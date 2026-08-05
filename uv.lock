@@ -1213,7 +1213,7 @@ wheels = [
 
 [[package]]
 name = "objscale"
-version = "2.1.0"
+version = "2.2.0"
 source = { editable = "../objscale" }
 dependencies = [
     { name = "numba" },
@@ -1684,6 +1684,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+calibration = [
+    { name = "matplotlib" },
+    { name = "scaleinvariance" },
+]
 dev = [{ name = "pytest", specifier = ">=8.3.5" }]
 
 [[package]]
