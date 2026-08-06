@@ -109,8 +109,8 @@ def pdf_panel(ax, d, hosts, sources, v, z_km, panel, show_ylabel, threshold):
             continue
         counts, edges = np.histogram(f, bins=bins, density=True)
         centres = 0.5 * (edges[1:] + edges[:-1])
-        ax.step(centres, counts, where="mid", color=COLOR[s], lw=LW,
-                alpha=ALPHA)
+        ax.plot(centres, counts, color=COLOR[s], lw=LW, alpha=ALPHA,
+                solid_capstyle="round")
 
     ax.set_yscale("log")
     style(ax, panel, f"{label}  [{unit}]", "density" if show_ylabel else "")
