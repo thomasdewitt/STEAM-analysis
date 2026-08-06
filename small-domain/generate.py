@@ -68,7 +68,7 @@ def run_one(set_tag):
     qt_sat_surface = float(_saturation_mixing_ratio(300.0, surface_pressure))
     # Anchored bounds, as the square campaign sets them.
     h_upper = max(cp * 300.0 + Lv * qt_sat_surface,
-                  float(h_profile.max()) + 1.0)
+                  float(h_profile.max()))
     h_lower = float(h_profile.min()) - 10.0 * cp
 
     _steam_simulate.FLUX_SCALE = SETS[set_tag]

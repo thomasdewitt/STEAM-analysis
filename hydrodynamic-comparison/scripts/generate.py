@@ -122,7 +122,7 @@ def run_one(host, set_tag):
     # surface-saturation MSE and the profile max; the lower allows a 10 K
     # deficit below the coldest point of the profile.
     h_upper = max(cp * 300.0 + Lv * qt_sat_surface,
-                  float(h_profile.max()) + 1.0)
+                  float(h_profile.max()))
     h_lower = float(h_profile.min()) - 10.0 * cp
 
     _steam_simulate.FLUX_SCALE = SETS[set_tag]

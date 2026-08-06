@@ -149,7 +149,7 @@ def run_square(set_tag, member, out_nc):
         qt_sat_surface = float(_saturation_mixing_ratio(300.0, surface_pressure))
         # Anchored bounds (supp S2 as amended 2026-07-27)
         h_upper = max(cp * 300.0 + Lv * qt_sat_surface,
-                      float(h_profile.max()) + 1.0)
+                      float(h_profile.max()))
         h_lower = float(h_profile.min()) - 10.0 * cp
         RUNS.mkdir(parents=True, exist_ok=True)
         t0 = time.perf_counter()
