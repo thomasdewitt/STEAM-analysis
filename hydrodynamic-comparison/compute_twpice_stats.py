@@ -42,6 +42,9 @@ import netCDF4
 
 from steam.constants import specific_heat_dry_air as cp
 
+from common import (VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_xy, match_factors,
+                    reduce_source)
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 RUNS = REPO / "runs" / "hydro"
@@ -52,47 +55,8 @@ sys.path.insert(0, str(REPO))
 from make_input_profiles import _twpice_field, read_var    # noqa: E402
 
 SETS = ("c005", "c017")
-VARS = ("h", "qt", "qc", "qi")
-CLOUD_KGKG = 0.01e-3
-PDF_LEVELS = (5000.0, 10000.0)
 XY_COARSEN = 2                 # host 100 m -> 200 m
 SNAPSHOT = "0000003450"
-
-
-def coarsen_xy(a, f):
-    """Block-mean over the two trailing axes by a factor f, in float64."""
-    nz, ny, nx = a.shape
-    return a.reshape(nz, ny // f, f, nx // f, f).mean(axis=(2, 4),
-                                                      dtype=np.float64)
-
-
-def match_factors(z_host, z_steam):
-    """Per-level coarsening factors, host and STEAM, under the standing rule.
-
-    At each host level, the finer of the two grids is averaged over the
-    nearest integer number of its own levels that brings the two spacings
-    closest. Only one factor exceeds 1 at any level.
-    """
-    dz_host = np.gradient(z_host)
-    dz_steam = np.gradient(z_steam)
-    n_steam = np.empty(z_host.size, dtype=int)
-    n_host = np.empty(z_host.size, dtype=int)
-    for j, z in enumerate(z_host):
-        ds = dz_steam[np.argmin(np.abs(z_steam - z))]
-        ratio = dz_host[j] / ds
-        n_steam[j] = max(1, int(round(ratio)))
-        n_host[j] = max(1, int(round(1.0 / ratio)))
-    return n_steam, n_host
-
-
-def level_slice(field, z_axis, z_target, n):
-    """Mean of the n levels centred on z_target, as a 2D field.
-
-    field is indexed with z LAST. n is the coarsening factor for this level.
-    """
-    i0 = int(np.argmin(np.abs(z_axis - z_target))) - n // 2
-    i0 = min(max(i0, 0), z_axis.size - n)
-    return field[..., i0:i0 + n].mean(axis=-1, dtype=np.float64)
 
 
 def host_fields():
@@ -144,25 +108,6 @@ def steam_fields(set_tag):
     ds.close()
     print(f"steam {set_tag} loaded: {fields['h'].shape}", flush=True)
     return z, fields
-
-
-def reduce_source(z_axis, fields, z_levels, factors):
-    """Per-level std and cloud fraction, plus the PDF-level fields."""
-    std = {v: np.empty(z_levels.size) for v in VARS}
-    cf = np.empty(z_levels.size)
-    for j, (z, n) in enumerate(zip(z_levels, factors)):
-        for v in VARS:
-            std[v][j] = level_slice(fields[v], z_axis, z, n).std()
-        cond = (level_slice(fields["qc"], z_axis, z, n)
-                + level_slice(fields["qi"], z_axis, z, n))
-        cf[j] = float((cond >= CLOUD_KGKG).mean())
-    slices = {}
-    for z_pdf in PDF_LEVELS:
-        j = int(np.argmin(np.abs(z_levels - z_pdf)))
-        for v in VARS:
-            slices[f"{v}_{z_pdf / 1000:.0f}km"] = level_slice(
-                fields[v], z_axis, z_levels[j], factors[j]).astype(np.float32)
-    return std, cf, slices
 
 
 def main():

@@ -31,55 +31,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from common import VARS, UNITS, INK, COLOR, rcparams, style
+
 HERE = Path(__file__).resolve().parent
 DATA = HERE / "twpice_stats.npz"
 
-# paper/concept-figs/turblib.py
-INK = "#111111"
-RULE = "#e3e3e3"
-LABEL = "#7a7a7a"
-# The host is the reference, so it takes the ink; the two STEAM runs take
-# the teal/sienna pair.
-COLOR = {"host": INK, "c005": "#1F6E6B", "c017": "#B5502A"}
-NAME = {"host": "SAM-TWPICE", "c005": "STEAM  $c=0.05$", "c017": "STEAM  $c=0.17$"}
+NAME = {"host": "SAM-TWPICE",
+        "c005": "STEAM  $c=0.05$", "c017": "STEAM  $c=0.17$"}
 
-# variable -> (label, unit scale, unit name)
-UNITS = {
-    "h":  (r"$h$",     1e-3, "kJ kg$^{-1}$"),
-    "qt": (r"$q_t$",   1e3,  "g kg$^{-1}$"),
-    "qc": (r"$q_c$",   1e3,  "g kg$^{-1}$"),
-    "qi": (r"$q_i$",   1e3,  "g kg$^{-1}$"),
-}
-VARS = tuple(UNITS)
-
-plt.rcParams.update({
-    "font.size": 8.5,
-    "axes.titlesize": 9,
-    "axes.labelsize": 8.5,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "text.color": INK,
-    "axes.labelcolor": INK,
-    "axes.edgecolor": RULE,
-    "axes.linewidth": 0.8,
-    "legend.frameon": False,
-    "figure.facecolor": "white",
-})
-
-
-def style(ax, panel, xlabel, ylabel):
-    ax.set_title(panel, color=INK, pad=6, loc="left", fontweight="bold")
-    ax.set_xlabel(xlabel)
-    if ylabel:
-        ax.set_ylabel(ylabel)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    for side in ("left", "bottom"):
-        ax.spines[side].set_color(RULE)
-    ax.tick_params(which="both", length=3, width=0.8, colors=LABEL)
-    ax.tick_params(which="minor", length=1.8)
-    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
-        lbl.set_color(INK)
+rcparams()
 
 
 def profiles(d, sources):
