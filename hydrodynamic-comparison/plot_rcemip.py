@@ -34,18 +34,24 @@ DATA = HERE / "rcemip_stats.npz"
 
 NAME = {"host": "RCEMIP hosts", "c005": "STEAM  $c=0.05$",
         "c017": "STEAM  $c=0.17$"}
-LW = 0.8
+LW = 0.56
 ALPHA = 0.65
 
 rcparams()
 
 
+def order(sources):
+    """STEAM first, hosts last, so the reference lines sit on top."""
+    return [s for s in sources if s != "host"] + ["host"]
+
+
 def draw(ax, d, hosts, sources, key, x_of):
     """One thin line per host per source."""
-    for s in sources:
+    for s in order(sources):
         for host in hosts:
             ax.plot(x_of(d[f"{key}_{host}_{s}"]), d[f"z_{host}"] / 1000.0,
-                    color=COLOR[s], lw=LW, alpha=ALPHA, solid_capstyle="round")
+                    color=COLOR[s], lw=LW, alpha=ALPHA,
+                    solid_capstyle="round")
 
 
 def legend_handles(sources):
@@ -87,7 +93,7 @@ def pdf_panel(ax, d, hosts, sources, v, z_km, panel, show_ylabel, threshold):
     """
     label, scale, unit = UNITS[v]
     fields = {(host, s): d[f"pdf_{v}_{z_km:.0f}km_{host}_{s}"].ravel() * scale
-              for s in sources for host in hosts}
+              for s in order(sources) for host in hosts}
     condensate = v in ("qc", "qi")
 
     if condensate:

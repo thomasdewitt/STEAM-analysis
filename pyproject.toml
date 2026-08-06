@@ -7,9 +7,11 @@ dependencies = [
     "matplotlib",
     "netCDF4",
     "objscale",
+    "scaleinvariance",
     "steam",
 ]
 
 [tool.uv.sources]
 steam = { path = "../turbulon-model", editable = true }
 objscale = { path = "../objscale", editable = true }
+scaleinvariance = { path = "../scaleinvariance", editable = true }

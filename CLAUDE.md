@@ -34,6 +34,28 @@ computing per file then averaging gives a different, wrong answer. objscale
 runs with default parameters throughout, and the perimeter distribution uses
 `'nested perimeter'`.
 
+## hydrodynamic-comparison/
+
+The matched comparison against SAM-TWPICE and the nine RCE_large300 channels.
+`generate.py` runs one STEAM simulation per host per flux amplitude, on the
+host's domain at twice its horizontal spacing; then a compute/plot pair per
+figure, with `common.py` holding the matching rule and the styling.
+
+Two resolution conventions, deliberately different:
+
+- **Profiles and PDFs** (`compute_{twpice,rcemip}_stats.py`) are matched. The
+  hosts are block-averaged 2x2 horizontally onto STEAM's spacing, and per
+  level whichever field is finer vertically is averaged by the nearest
+  integer factor that closes the gap — so the factor varies with height, and
+  points at STEAM in some places and at the host in others.
+- **Scaling functions** (`compute_scaling.py`) are at native resolution on
+  both sides. Matching resolutions there would destroy the thing being
+  measured; the curves simply start at different smallest lags.
+
+Cloud fraction is condensate >= 0.01 g/kg, thresholded after coarsening.
+`qt` excludes precipitating water throughout, and K-scale fields are cast to
+float64 on read rather than at each reduction.
+
 ## Dependencies
 
 `uv sync` against `pyproject.toml`. `steam` and `objscale` are editable path
