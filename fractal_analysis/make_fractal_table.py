@@ -6,7 +6,9 @@ the top, ruled off from the four simulated cases below it (the two SAM LES
 and STEAM at both flux amplitudes).
 
 An italic entry is one where objscale warned about the fit -- too few
-populated size bins, or too narrow a range of scales. Every SAM size
+populated size bins, or too narrow a range of scales. A bold entry is the
+simulated case closest to MODIS in that column, which is only marked where
+MODIS reports the metric at all. Every SAM size
 distribution earns one, because a single snapshot per case simply does not
 carry the range; the dimensions, which are measured per object, do not.
 Reading those numbers as measured would be a mistake, and italics say so on
@@ -60,25 +62,53 @@ CASES = (
 )
 
 
-def cell(value, warned):
-    """One table entry: two decimals, italic if objscale warned, -- if absent."""
+def cell(value, warned=False, bold=False):
+    """One entry: two decimals, italic if flagged, bold if closest to MODIS."""
     if value is None or not np.isfinite(value):
         return "--"
     text = f"{value:.2f}"
-    return rf"\textit{{{text}}}" if warned else text
+    if warned:
+        text = rf"\textit{{{text}}}"
+    if bold:
+        text = rf"\textbf{{{text}}}"
+    return text
 
 
-def case_row(label, data, prefix, R):
-    tag = threshold_tag(R) if prefix is None else f"{prefix}_{threshold_tag(R)}"
-    cells = []
+def case_values(loaded, R):
+    """{label: {metric: (value, warned)}} for every simulated case."""
+    out = {}
+    for label, filename, prefix in CASES:
+        data = loaded[filename]
+        tag = (threshold_tag(R) if prefix is None
+               else f"{prefix}_{threshold_tag(R)}")
+        entry = {}
+        for key, _ in COLUMNS:
+            full = f"{tag}_{key}"
+            value = float(data[full]) if full in data else None
+            entry[key] = (value, bool(data.get(f"{tag}_warn_{key}", False)))
+        out[label] = entry
+    return out
+
+
+def closest_to_modis(values, R):
+    """{metric: label} of the case nearest the retrieval, where there is one.
+
+    Only where MODIS reports the metric; CF and tau_area have no reference,
+    so nothing is marked in those columns. A flagged fit can still win --
+    it stays italic, so the reader sees both facts at once.
+    """
+    best = {}
     for key, _ in COLUMNS:
-        full = f"{tag}_{key}"
-        if full not in data:
-            cells.append("--")
+        reference = MODIS[R][key]
+        if reference is None:
             continue
-        warned = bool(data.get(f"{tag}_warn_{key}", False))
-        cells.append(cell(float(data[full]), warned))
-    return f"{label} & " + " & ".join(cells) + r" \\"
+        candidates = [(abs(v - reference), label)
+                      for label, entry in values.items()
+                      for v, _ in [entry[key]]
+                      if v is not None and np.isfinite(v)]
+        if candidates:
+            best[key] = min(candidates)[1]
+    return best
 
 
 def main():
@@ -103,7 +133,9 @@ def main():
         r"paper). CF is cloud fraction. MODIS values are from that paper's "
         r"Table 1, which reports neither CF nor $\tau_{\mathrm{area}}$. "
         r"Italic entries are fits objscale flagged as resting on too few "
-        r"size bins or too narrow a range of scales.}",
+        r"size bins or too narrow a range of scales; bold marks the "
+        r"simulated case closest to the retrieval in each column that has "
+        r"one.}",
         r"\label{tab:cloud geometry}",
         r"\begin{tabular}{l" + "c" * len(COLUMNS) + "}",
         r"\tophline",
@@ -121,8 +153,12 @@ def main():
                      + " & ".join(cell(modis[key], False) for key, _ in COLUMNS)
                      + r" \\")
         lines.append(rf"\cline{{1-{len(COLUMNS) + 1}}}")
-        for label, filename, prefix in CASES:
-            lines.append(case_row(label, loaded[filename], prefix, R))
+        values = case_values(loaded, R)
+        best = closest_to_modis(values, R)
+        for label, _, _ in CASES:
+            cells = [cell(*values[label][key], bold=(best.get(key) == label))
+                     for key, _ in COLUMNS]
+            lines.append(f"{label} & " + " & ".join(cells) + r" \\")
 
     lines += [r"\bottomhline", r"\end{tabular}",
               r"\belowtable{}", r"\end{table*}"]
