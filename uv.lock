@@ -1373,6 +1373,25 @@ wheels = [
 ]
 
 [[package]]
+name = "scaleinvariance"
+version = "0.15.0"
+source = { editable = "../scaleinvariance" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "torch", marker = "extra == 'torch'" },
+]
+provides-extras = ["torch"]
+
+[[package]]
 name = "scikit-image"
 version = "0.25.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1842,6 +1861,7 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "objscale" },
+    { name = "scaleinvariance" },
     { name = "steam" },
 ]
 
@@ -1851,6 +1871,7 @@ requires-dist = [
     { name = "netcdf4" },
     { name = "numpy" },
     { name = "objscale", editable = "../objscale" },
+    { name = "scaleinvariance", editable = "../scaleinvariance" },
     { name = "steam", editable = "../turbulon-model" },
 ]
 

@@ -43,7 +43,7 @@ RUNS = REPO / "runs" / "small-domain"
 PROFILES = REPO / "runs" / "input_profiles"
 
 PROFILE_HOST = "ukmo_ra1t"          # the square campaign's profile
-SETS = {"c005": 0.05, "c017": 0.17}
+SETS = {"c002": 0.02, "c005": 0.05, "c017": 0.17}
 
 NX, NY = 2048, 768
 DX = 10.0

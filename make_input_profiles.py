@@ -40,6 +40,14 @@ OUT = REPO / "runs" / "input_profiles"
 PROFILE_DZ = 50.0
 DOMAIN_HEIGHT = 20000.0
 P0_DEFAULT = 101480.0  # RCEMIP analytic sounding surface pressure [Pa]
+# SAM's linear condensate partition: all liquid at 0 C, all ice at -38 C.
+T_LIQUID = 273.15
+T_ICE = 235.15
+
+
+def liquid_fraction(T):
+    """SAM's linear condensate partition: all liquid at 0 C, all ice at -38 C."""
+    return np.clip((T - T_ICE) / (T_LIQUID - T_ICE), 0.0, 1.0)
 
 
 def spec_to_mr(q):
@@ -235,6 +243,29 @@ def _twpice_field(path, name, y_first):
     return field
 
 
+def gate(i):
+    """SAM GATE idealized LES, hour 23 (the last hour with complete data).
+
+    Hours 20 and 24 exist only as gap files rebuilt from .dat -- 210 levels
+    rather than 256, and missing W (and PP at 24 h) -- so 23 h is the last
+    com3D hour carrying all eight fields (DATA_RECORD.md Sec. 12).
+
+    SAM archives only QN, the combined non-precipitating condensate, so the
+    liquid/ice split is reconstructed with SAM's own linear ramp: all liquid
+    at 0 C, all ice at -38 C, linear in temperature between. QP
+    (precipitating water) is excluded, as for every other host here.
+    """
+    path = (DATA / "gate"
+            / "GATE_IDEAL_S_2048x2048x256_100m_2s_2048_0000041400.nc")
+    z = read_var(path, "z")
+    p_ref = read_var(path, "p")                    # 1-D, mb
+    T = read_var(path, "TABS", 0)
+    qv = read_var(path, "QV", 0) / 1000.0          # g/kg mixing ratio already
+    qn = read_var(path, "QN", 0) / 1000.0
+    liquid = liquid_fraction(T)
+    return z, T, qv, qn * liquid, qn * (1.0 - liquid), float(p_ref[0]) * 100.0
+
+
 def twpice(i):
     d = DATA / "twpice"
     qv_file = d / "TWPICE_LPT_3D_QV_0000003450.nc"
@@ -262,13 +293,13 @@ ADAPTERS = {
     "ukmo_ra1t_nocloud": ukmo_ra1t_nocloud,
     "scale": scale, "ucla": ucla,
     "icon_lem": icon_lem, "icon_nwp": icon_nwp,
-    "twpice": twpice, "les_cm1": les_cm1, "les_sam": les_sam,
+    "gate": gate, "twpice": twpice, "les_cm1": les_cm1, "les_sam": les_sam,
     "les_dales": les_dales, "les_icon_lem": les_icon_lem,
 }
 
 # The RCE_large300 channel hosts archive three well-separated timesteps each;
 # the comparison datasets below them are single snapshots.
-SINGLE_SNAPSHOT = {"twpice", "les_cm1", "les_sam", "les_dales", "les_icon_lem"}
+SINGLE_SNAPSHOT = {"gate", "twpice", "les_cm1", "les_sam", "les_dales", "les_icon_lem"}
 
 
 def n_timesteps(host):

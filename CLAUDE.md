@@ -36,7 +36,12 @@ runs with default parameters throughout, and the perimeter distribution uses
 
 ## hydrodynamic-comparison/
 
-The matched comparison against SAM-TWPICE and the nine RCE_large300 channels.
+The matched comparison against SAM-TWPICE, SAM-GATE and the nine
+RCE_large300 channels. GATE is hour 23, the last hour with complete data (20
+and 24 h exist only as 210-level gap files rebuilt from `.dat`); it archives
+only the combined condensate `QN`, so the liquid/ice split uses SAM's linear
+ramp — all liquid at 0 C, all ice at -38 C — applied at native resolution,
+before coarsening, since it does not commute with the average.
 `generate.py` runs one STEAM simulation per host per flux amplitude, on the
 host's domain at twice its horizontal spacing; then a compute/plot pair per
 figure, with `common.py` holding the matching rule and the styling.

@@ -5,8 +5,9 @@ One simulation per host per flux-noise amplitude. Each run sits on its host's
 own domain, driven by that host's mean h and qt profile, at twice the host's
 horizontal grid spacing. Nothing else varies across the set.
 
-Hosts: SAM-TWPICE (a driven, sheared deep-convection case) and the nine usable
-RCE_large300 channels (MESONH excluded for its documented hus error, ICON_AES
+Hosts: SAM-TWPICE (a driven, sheared deep-convection case), SAM-GATE
+(idealized maritime deep convection, same 2048^2 x 100 m geometry) and the
+nine usable RCE_large300 channels (MESONH excluded for its documented hus error, ICON_AES
 for having no usable z).
 
 Grid. STEAM runs at dx = 2 x the host's dx: 200 m for TWPICE (host 100 m) and
@@ -83,6 +84,10 @@ HOSTS = {
     "ucla":              CHANNEL,
     "icon_lem":          CHANNEL,
     "icon_nwp":          CHANNEL,
+    # Appended rather than grouped with twpice: the seed is derived from
+    # position in this dict, so inserting higher up would silently
+    # re-randomize every run below it.
+    "gate":              (1024, 1024, 200.0, 2),   # as twpice
 }
 
 SETS = {  # set tag -> c, the flux noise amplitude (steam.simulate.FLUX_SCALE)

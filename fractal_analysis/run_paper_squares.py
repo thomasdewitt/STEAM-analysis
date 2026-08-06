@@ -76,10 +76,10 @@ PROFILES = REPO / "runs" / "input_profiles"
 PROFILE_HOST = "ukmo_ra1t"
 
 SETS = {  # set tag -> c, the flux noise amplitude (steam.simulate.FLUX_SCALE)
-    # "C1small": 0.05,
+    "C1small": 0.05,
     "C1large": 0.17,
 }
-N_MEMBERS = 100
+N_MEMBERS = 10
 NX = 2048
 DX = 1000.0
 OUTER_SCALE = 1024e3       # L = longest domain dimension / 2 (2026-08-04)
@@ -88,7 +88,8 @@ DOMAIN_HEIGHT = 20000.0
 PROFILE_DZ = 50.0
 SQUARE_NZ = 211            # ruled expectation; mismatch is fatal
 
-RUN_NESTS = False
+DEVICE = 'cpu'
+RUN_NESTS = True
 
 # Nest A: centered 32x32 km, full depth, target dx = 62.5 m.
 NEST_A = dict(x_start=1008, x_stop=1040, y_start=1008, y_stop=1040,
@@ -166,7 +167,7 @@ def run_square(set_tag, member, out_nc):
             h_min=h_lower, h_max=h_upper,
             qt_min=0.0, qt_max=qt_sat_surface,
             compress=True,
-            device="cuda",
+            device=DEVICE,
             save_for_refinement=RUN_NESTS,
         )
         print(f"square {set_tag} m{member:02d} simulated "
@@ -193,7 +194,7 @@ def run_nest(out_nc, which, spec_kwargs, group, parent_group, expect_xy,
     if not exists:
         t0 = time.perf_counter()
         refine(str(out_nc), parent_group=parent_group, output_group=group,
-               device="cuda", compress=True,
+               device=DEVICE, compress=True,
                save_for_refinement=save_for_refinement, **spec_kwargs)
         print(f"nest {which} done ({time.perf_counter() - t0:.0f} s)",
               flush=True)
