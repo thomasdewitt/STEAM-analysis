@@ -123,11 +123,27 @@ def metrics_at(masks, x_sizes, y_sizes,
     measured per object and survive a single snapshot; the size
     distributions are counts per size bin and do not, so a caller with one
     field may want the dimensions without them.
+
+    NO-DATA. A mask may carry nan where there is no measurement, and the
+    three estimators want opposite things from it. The object-based ones --
+    D_f and both size distributions -- need the nan: objscale reads it as
+    the edge of the data, drops any object touching it, and declines to
+    count perimeter along it, so a cloud running off the edge of a gap is
+    not mistaken for a small complete cloud. The correlation dimension has
+    no notion of a data boundary and rejects nan outright, so it gets a
+    zero-filled copy, which costs it only the pairs it could never have
+    counted. Callers whose masks are already clean (STEAM, SAM) are
+    unaffected: the fill is then a no-op.
     """
+    if any(np.any(np.isnan(m)) for m in masks):
+        filled = [np.nan_to_num(m, nan=0.0) for m in masks]
+    else:
+        filled = masks
     with warned() as w_De:
         D_e, C_bins, C_l = objscale.ensemble_correlation_dimension(
-            masks, x_sizes=x_sizes, y_sizes=y_sizes,
+            filled, x_sizes=x_sizes, y_sizes=y_sizes,
             point_reduction_factor=point_reduction_factor, return_C_l=True)
+    del filled
     with warned() as w_Df:
         D_f, ind_log_length, ind_log_perimeter = \
             objscale.individual_fractal_dimension(
@@ -136,7 +152,7 @@ def metrics_at(masks, x_sizes, y_sizes,
         D_e=D_e, C_bins=C_bins, C_l=C_l, warn_D_e=w_De[0],
         D_f=D_f, ind_log_length=ind_log_length,
         ind_log_perimeter=ind_log_perimeter, warn_D_f=w_Df[0],
-        cover=float(np.mean([m.mean() for m in masks])))
+        cover=float(np.mean([np.nanmean(m) for m in masks])))
     if not distributions:
         return result
 

@@ -9,6 +9,7 @@ dependencies = [
     "objscale",
     "scaleinvariance",
     "steam",
+    "pyhdf>=0.11.7",
 ]
 
 [tool.uv.sources]

@@ -16,13 +16,19 @@ carry the range; the dimensions, which are measured per object, do not.
 Reading those numbers as measured would be a mistake, and italics say so on
 the page rather than in a log.
 
-MODIS values are read off Table 1 of DeWitt et al. (2026), "Toward less
-subjective metrics for quantifying the shape and organization of clouds",
-ACP 26, 6951-6971: the measured individual dimension D_i, the correlation
-form of D_e, and beta, which is this repo's nested-perimeter exponent.
-Uncertainties are dropped by request. That paper reports neither a cloud
-fraction nor an area-distribution exponent, so those two cells are empty
-rather than guessed.
+MODIS is recomputed here rather than quoted. compute_modis_fractal.py runs
+the 72 granules behind DeWitt et al. (2026), "Toward less subjective metrics
+for quantifying the shape and organization of clouds", ACP 26, 6951-6971,
+through the same objscale calls as the simulations, using a loader written
+from the file specification rather than ported from that paper's code. Two
+things follow. The retrieval and the models now differ only in where the
+mask came from, not in how it was measured; and the cloud fraction and area
+exponent that paper does not report are available, so no cell is empty.
+
+The published Table 1 is reproduced to a mean absolute difference of 0.011
+over the nine cells it reports, which is the check that the pipeline here is
+measuring what that paper measured. PUBLISHED below keeps those values for
+that comparison; they are not what the table prints.
 
 Usage: python make_fractal_table.py
 """
@@ -45,8 +51,10 @@ COLUMNS = (
     ("tau_per", r"$\tau_{\mathrm{per}}$"),
 )
 
-# DeWitt et al. (2026) Table 1, by reflectance threshold. None = not reported.
-MODIS = {
+# DeWitt et al. (2026) Table 1, by reflectance threshold. None = not
+# reported there. Kept only so main() can print the reproduction check; the
+# table prints the recomputed values.
+PUBLISHED = {
     0.1: {"cover": None, "D_e": 1.77, "D_f": 1.38,
           "tau_area": None, "tau_per": 1.26},
     0.2: {"cover": None, "D_e": 1.72, "D_f": 1.38,
@@ -54,6 +62,17 @@ MODIS = {
     0.3: {"cover": None, "D_e": 1.71, "D_f": 1.39,
           "tau_area": None, "tau_per": 1.34},
 }
+
+# Which solar-zenith convention the retrieval is read under. False leaves
+# the L1B reflectance as stored, rho*cos(theta_0); True divides the cosine
+# out. False is the convention of the published table -- the reproduction
+# check confirms it, matching to 0.011 against 0.017 corrected -- so it is
+# what makes this table continuous with that paper. The argument for True is
+# that the model masks are an overhead-sun albedo, and it is not a weak one;
+# what settles it in practice is that the exponents barely move either way
+# (D_e by 0.03 at most) while cloud cover moves by a factor of two, so the
+# comparison the table is making does not rest on the choice.
+MODIS_SOLAR_CORRECTION = False
 
 # Entries this close to the best one are bolded alongside it; 0.01 is the
 # table's own display precision.
@@ -80,6 +99,21 @@ def cell(value, warned=False, bold=False):
     return text
 
 
+def modis_file():
+    tag = "_sza" if MODIS_SOLAR_CORRECTION else ""
+    return f"modis_fractal_metrics{tag}.npz"
+
+
+def entry_from(data, tag):
+    """{metric: (value, warned)} for one threshold of one npz."""
+    out = {}
+    for key, _ in COLUMNS:
+        full = f"{tag}_{key}"
+        out[key] = (float(data[full]) if full in data else None,
+                    bool(data.get(f"{tag}_warn_{key}", False)))
+    return out
+
+
 def case_values(loaded, R):
     """{label: {metric: (value, warned)}} for every simulated case."""
     out = {}
@@ -96,7 +130,7 @@ def case_values(loaded, R):
     return out
 
 
-def closest_to_modis(values, R):
+def closest_to_modis(values, reference):
     """{metric: {labels}} of the cases nearest the retrieval.
 
     Every case within TIE_TOLERANCE of the best one is marked, not just the
@@ -108,16 +142,17 @@ def closest_to_modis(values, R):
     against the printed page rather than against a file the reader does not
     have.
 
-    Only columns MODIS reports are marked; CF and tau_area have no
-    reference. A flagged fit can still win and keeps its italics, so the
-    reader sees both facts at once.
+    Every column now has a reference, since the retrieval is recomputed
+    rather than quoted and so carries a cloud fraction and an area exponent
+    too. A flagged fit can still win and keeps its italics, so the reader
+    sees both facts at once.
     """
     best = {}
     for key, _ in COLUMNS:
-        reference = MODIS[R][key]
-        if reference is None:
+        target = reference[key][0]
+        if target is None or not np.isfinite(target):
             continue
-        distances = {label: abs(round(v, 2) - reference)
+        distances = {label: abs(round(v, 2) - round(target, 2))
                      for label, entry in values.items()
                      for v, _ in [entry[key]]
                      if v is not None and np.isfinite(v)}
@@ -140,6 +175,13 @@ def main():
                     f"(once per set) and compute_sam_fractal.py first")
             loaded[filename] = dict(np.load(path, allow_pickle=False))
 
+    modis_path = HERE / modis_file()
+    if not modis_path.exists():
+        raise SystemExit(
+            f"{modis_path.name} not found -- run compute_modis_fractal.py"
+            + (" --sza" if MODIS_SOLAR_CORRECTION else "") + " first")
+    modis_data = dict(np.load(modis_path, allow_pickle=False))
+
     lines = [
         r"% Generated by make_fractal_table.py -- do not edit by hand.",
         r"\begin{table*}[t]",
@@ -148,12 +190,20 @@ def main():
         r"individual fractal dimension ($D_i$ in DeWitt et al., 2026), and "
         r"$\tau_{\mathrm{area}}$, $\tau_{\mathrm{per}}$ the area and "
         r"nested-perimeter size-distribution exponents ($\beta$ in that "
-        r"paper). CF is cloud fraction. MODIS values are from that paper's "
-        r"Table 1, which reports neither CF nor $\tau_{\mathrm{area}}$. "
+        r"paper). CF is cloud fraction. The MODIS row is recomputed here "
+        r"from the 72 granules of that study, through the same estimators "
+        r"as the simulations, and restricted to sensor zenith angles below "
+        r"$60^\circ$: beyond that a pixel is several km across and views "
+        r"cloud sides as much as cloud tops, which the per-pixel footprints "
+        r"passed to the estimators cannot repair. That restriction is a "
+        r"deliberate difference from the published analysis, and is the "
+        r"likeliest source of the residual disagreement with it; the nine "
+        r"values that paper reports are nonetheless reproduced to a mean "
+        r"absolute difference of 0.011. "
         r"Italic entries are fits objscale flagged as resting on too few "
         r"size bins or too narrow a range of scales; bold marks the "
-        r"simulated case closest to the retrieval in each column that has "
-        r"one, and any case within 0.01 of it.}",
+        r"simulated case closest to the retrieval in each column, and any "
+        r"case within 0.01 of it.}",
         r"\label{tab:cloud geometry}",
         r"\begin{tabular}{l" + "c" * len(COLUMNS) + "}",
         r"\tophline",
@@ -166,13 +216,13 @@ def main():
             lines.append(r"\middlehline")
         lines.append(rf"\multicolumn{{{len(COLUMNS) + 1}}}{{l}}"
                      rf"{{\textbf{{$R > {R:g}$}}}} \\")
-        modis = MODIS[R]
+        modis = entry_from(modis_data, threshold_tag(R))
         lines.append("MODIS & "
-                     + " & ".join(cell(modis[key], False) for key, _ in COLUMNS)
+                     + " & ".join(cell(*modis[key]) for key, _ in COLUMNS)
                      + r" \\")
         lines.append(rf"\cline{{1-{len(COLUMNS) + 1}}}")
         values = case_values(loaded, R)
-        best = closest_to_modis(values, R)
+        best = closest_to_modis(values, modis)
         for label, _, _ in CASES:
             cells = [cell(*values[label][key], bold=(label in best.get(key, ())))
                      for key, _ in COLUMNS]
@@ -184,7 +234,26 @@ def main():
     text = "\n".join(lines) + "\n"
     OUT.write_text(text)
     print(text)
-    print(f"wrote {OUT.name}")
+
+    # The reproduction check. Printed rather than written into the table:
+    # it is evidence that the pipeline measures what the published one
+    # measured, not a result about clouds.
+    deltas = []
+    print(f"reproduction of DeWitt et al. (2026) Table 1, from "
+          f"{modis_path.name}:")
+    for R in ALBEDO_THRESHOLDS:
+        entry = entry_from(modis_data, threshold_tag(R))
+        for key, head in COLUMNS:
+            published = PUBLISHED[R][key]
+            if published is None:
+                continue
+            here = entry[key][0]
+            deltas.append(abs(here - published))
+            print(f"  R>{R:g}  {head:<22} published {published:.2f}   "
+                  f"here {here:.3f}   delta {here - published:+.3f}")
+    print(f"  mean |delta| over {len(deltas)} reported values: "
+          f"{np.mean(deltas):.3f}")
+    print(f"\nwrote {OUT.name}")
 
 
 if __name__ == "__main__":
