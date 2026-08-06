@@ -45,8 +45,8 @@ from matplotlib.lines import Line2D
 from albedo import threshold_tag
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / "fractal_metrics.npz"
-OUT = HERE / "fractal_metrics"
+DATA = HERE / "fractal_metrics_C1large.npz"
+OUT = HERE / "fractal_metrics_C1large"
 
 # paper/concept-figs/turblib.py
 INK = "#111111"
