@@ -45,10 +45,13 @@ from steam.constants import (
 )
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent
+BASE = HERE.parent                 # hydrodynamic-comparison/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
 RUNS = REPO / "runs" / "hydro"
 TWPICE = REPO / "data" / "twpice"
-OUT = HERE / "scaling_stats.npz"
+OUT = OUTPUT / "scaling_stats.npz"
 
 sys.path.insert(0, str(REPO))
 from make_input_profiles import ADAPTERS, read_var          # noqa: E402
@@ -164,6 +167,7 @@ def main():
         if case not in CASES:
             raise SystemExit(f"unknown case {case!r} (have {list(CASES)})")
         do_case(case, out)
+    OUTPUT.mkdir(exist_ok=True)
     np.savez_compressed(OUT, **out)
     print(f"wrote {OUT.name} ({OUT.stat().st_size / 1e6:.1f} MB)")
 

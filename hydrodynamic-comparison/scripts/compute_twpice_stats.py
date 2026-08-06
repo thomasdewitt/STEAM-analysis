@@ -46,10 +46,13 @@ from common import (VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_xy, match_factors,
                     reduce_source)
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent
+BASE = HERE.parent                 # hydrodynamic-comparison/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
 RUNS = REPO / "runs" / "hydro"
 HOST = REPO / "data" / "twpice"
-OUT = HERE / "twpice_stats.npz"
+OUT = OUTPUT / "twpice_stats.npz"
 
 sys.path.insert(0, str(REPO))
 from make_input_profiles import _twpice_field, read_var    # noqa: E402
@@ -151,6 +154,7 @@ def main():
             out[f"pdf_{k}_{tag}"] = a
         print(f"steam {tag} reduced", flush=True)
 
+    OUTPUT.mkdir(exist_ok=True)
     np.savez_compressed(OUT, **out)
     print(f"wrote {OUT.name} ({OUT.stat().st_size / 1e6:.0f} MB)")
 

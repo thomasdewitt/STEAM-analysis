@@ -47,9 +47,12 @@ from steam.constants import (
 from common import VARS, coarsen_xy, match_factors, reduce_source
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent
+BASE = HERE.parent                 # hydrodynamic-comparison/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
 RUNS = REPO / "runs" / "hydro"
-OUT = HERE / "rcemip_stats.npz"
+OUT = OUTPUT / "rcemip_stats.npz"
 
 sys.path.insert(0, str(REPO))
 from make_input_profiles import ADAPTERS                   # noqa: E402
@@ -127,6 +130,7 @@ def main():
     for host in hosts:
         do_host(host, out)
 
+    OUTPUT.mkdir(exist_ok=True)
     np.savez_compressed(OUT, **out)
     print(f"wrote {OUT.name} ({OUT.stat().st_size / 1e6:.0f} MB)")
 

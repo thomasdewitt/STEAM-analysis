@@ -63,7 +63,8 @@ from steam.thermodynamics import compute_diagnostics, _saturation_mixing_ratio
 from steam.constants import specific_heat_dry_air as cp
 from steam.constants import latent_heat_vaporization as Lv
 
-REPO = Path(__file__).resolve().parent.parent
+BASE = Path(__file__).resolve().parent.parent   # hydrodynamic-comparison/
+REPO = BASE.parent
 RUNS = REPO / "runs" / "hydro"
 PROFILES = REPO / "runs" / "input_profiles"
 

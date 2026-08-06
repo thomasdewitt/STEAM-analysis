@@ -34,7 +34,11 @@ import matplotlib.pyplot as plt
 from common import VARS, UNITS, INK, COLOR, rcparams, style
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / "twpice_stats.npz"
+BASE = HERE.parent                 # hydrodynamic-comparison/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
+DATA = OUTPUT / "twpice_stats.npz"
 
 NAME = {"host": "SAM-TWPICE",
         "c005": "STEAM  $c=0.05$", "c017": "STEAM  $c=0.17$"}
@@ -129,8 +133,8 @@ def pdfs(d, sources):
 
 
 def save(fig, stem):
-    fig.savefig(HERE / f"{stem}.pdf", bbox_inches="tight", pad_inches=0.05)
-    fig.savefig(HERE / f"{stem}.png", dpi=200, bbox_inches="tight",
+    fig.savefig(FIGS / f"{stem}.pdf", bbox_inches="tight", pad_inches=0.05)
+    fig.savefig(FIGS / f"{stem}.png", dpi=200, bbox_inches="tight",
                 pad_inches=0.05, facecolor="white")
     plt.close(fig)
     print(f"wrote {stem}.pdf and {stem}.png")

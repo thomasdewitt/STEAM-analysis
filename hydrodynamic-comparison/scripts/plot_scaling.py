@@ -29,7 +29,11 @@ from steam.constants import hurst_horizontal as H_H
 from common import UNITS, INK, LABEL, COLOR, rcparams, style
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / "scaling_stats.npz"
+BASE = HERE.parent                 # hydrodynamic-comparison/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
+DATA = OUTPUT / "scaling_stats.npz"
 
 VARS = ("h", "qt")
 NAME = {"twpice": {"host": "SAM-TWPICE"}, "rcemip": {"host": "RCEMIP hosts"}}
@@ -111,8 +115,8 @@ def main():
     for case in [str(c) for c in d["cases"]]:
         fig = figure(d, case)
         stem = f"{case}_scaling"
-        fig.savefig(HERE / f"{stem}.pdf", bbox_inches="tight", pad_inches=0.05)
-        fig.savefig(HERE / f"{stem}.png", dpi=200, bbox_inches="tight",
+        fig.savefig(FIGS / f"{stem}.pdf", bbox_inches="tight", pad_inches=0.05)
+        fig.savefig(FIGS / f"{stem}.png", dpi=200, bbox_inches="tight",
                     pad_inches=0.05, facecolor="white")
         plt.close(fig)
         print(f"wrote {stem}.pdf and {stem}.png")

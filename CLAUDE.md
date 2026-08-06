@@ -56,6 +56,19 @@ Cloud fraction is condensate >= 0.01 g/kg, thresholded after coarsening.
 `qt` excludes precipitating water throughout, and K-scale fields are cast to
 float64 on read rather than at each reduction.
 
+Scripts live in `scripts/`, cached statistics in `output/`, figures in
+`figs/`; the simulations themselves go to `runs/hydro/` with everything else
+regenerable.
+
+## small-domain/
+
+`generate.py` writes two finely resolved runs for visualization —
+20.48 x 7.68 km at dx = 10 m, surface to 5 km, on the square campaign's
+ukmo_ra1t profile, one per flux amplitude, into `runs/small-domain/`. The
+vertical spacing follows dx through the aspect ratio (dz = 7.34 m,
+681 levels), so the peak working set is ~46 GiB and the runs want the machine
+to themselves.
+
 ## Dependencies
 
 `uv sync` against `pyproject.toml`. `steam` and `objscale` are editable path
