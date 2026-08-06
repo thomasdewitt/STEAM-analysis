@@ -22,9 +22,10 @@ than specific humidities, h = cp*T + g*z + Lv*qv with steam's constants,
 qt = qv + qc + qi with no precipitating water. T is cast to float64 before
 h is formed -- it is K-scale, where float32 accumulators drift.
 
-Only the first archived timestep of each host is used. The hosts each have
-three, and the driving profiles average all three, but the inter-model
-spread this figure is about is far larger than the inter-snapshot spread.
+All three archived timesteps of each host are used, matching the driving
+profiles: the per-level statistics are averaged over the snapshots, and the
+PDF samples are pooled across them. (Until 2026-08-06 only the first
+snapshot was used -- a bug against the stated methodology.)
 
 MESONH is excluded (documented RCEMIP hus error) and ICON_AES for having no
 usable z, leaving nine.
@@ -61,12 +62,12 @@ HOSTS = ("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
          "scale", "ucla", "icon_lem", "icon_nwp")
 SETS = ("c005", "c017")
 XY_COARSEN = 2                 # host 3 km -> 6 km
-SNAPSHOT = 0
+SNAPSHOTS = (0, 1, 2)
 
 
-def host_fields(host):
-    """Host h, qt, qc, qi on the 6 km grid, each (nx, ny, nz), and its z."""
-    z, T, qv, qc, qi, _ = ADAPTERS[host](SNAPSHOT)
+def host_fields(host, snapshot):
+    """Host h, qt, qc, qi on the 6 km grid at one snapshot, and its z."""
+    z, T, qv, qc, qi, _ = ADAPTERS[host](snapshot)
     z = np.asarray(z, dtype=np.float64)
     h = cp * T.astype(np.float64) + g * z[:, None, None] + Lv * qv
     qt = qv + qc + qi
@@ -89,21 +90,36 @@ def steam_fields(host, set_tag):
 
 
 def do_host(host, out):
-    z_host, host_f = host_fields(host)
     z_steam, steam_f = steam_fields(host, SETS[0])
 
-    z_levels = z_host[z_host <= z_steam[-1]]
-    n_steam, n_host = match_factors(z_levels, z_steam)
-    out[f"z_{host}"] = z_levels
-    out[f"n_steam_{host}"] = n_steam
-    out[f"n_host_{host}"] = n_host
-
-    std, cf, slices = reduce_source(z_host, host_f, z_levels, n_host)
+    # Host side: one snapshot in memory at a time; statistics averaged over
+    # snapshots, PDF slices pooled (stacked -- the histograms flatten them).
+    std_sum, cf_sum, pooled = None, None, {}
+    z_levels = n_steam = n_host = None
+    for snap in SNAPSHOTS:
+        z_host, host_f = host_fields(host, snap)
+        if z_levels is None:
+            z_levels = z_host[z_host <= z_steam[-1]]
+            n_steam, n_host = match_factors(z_levels, z_steam)
+            out[f"z_{host}"] = z_levels
+            out[f"n_steam_{host}"] = n_steam
+            out[f"n_host_{host}"] = n_host
+        std, cf, slices = reduce_source(z_host, host_f, z_levels, n_host)
+        del host_f
+        if std_sum is None:
+            std_sum, cf_sum = std, cf
+            pooled = {k: [a] for k, a in slices.items()}
+        else:
+            for v in VARS:
+                std_sum[v] += std[v]
+            cf_sum += cf
+            for k, a in slices.items():
+                pooled[k].append(a)
     for v in VARS:
-        out[f"std_{v}_{host}_host"] = std[v]
-    out[f"cf_{host}_host"] = cf
-    for k, a in slices.items():
-        out[f"pdf_{k}_{host}_host"] = a
+        out[f"std_{v}_{host}_host"] = std_sum[v] / len(SNAPSHOTS)
+    out[f"cf_{host}_host"] = cf_sum / len(SNAPSHOTS)
+    for k, arrs in pooled.items():
+        out[f"pdf_{k}_{host}_host"] = np.stack(arrs)
 
     for tag in SETS:
         z_s, fields = (z_steam, steam_f) if tag == SETS[0] \

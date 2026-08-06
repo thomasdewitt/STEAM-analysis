@@ -19,6 +19,11 @@ the shorter axis is pooled as independent realizations in a single call
 different, wrong answer). Lags come back in cells and are converted to
 metres.
 
+All three archived channel snapshots are used: F_1 is computed per snapshot
+and averaged, which at order 1 with equal window counts per snapshot IS the
+pooled mean. (Until 2026-08-06 only the first snapshot was used -- a bug
+against the stated methodology.) TWPICE has a single snapshot.
+
 The level mean is subtracted before the transform. The Haar kernel is
 zero-mean so this changes nothing analytically, but h is O(3e5) J/kg while
 its fluctuations are O(1e3), and differencing two half-window means at that
@@ -116,16 +121,25 @@ def twpice_level(z_target):
     return {"h": h, "qt": qt}, float(z[k])
 
 
-def host_level(host, z_target):
-    """Host h and qt at the level nearest z_target, at native resolution."""
+def host_levels(host, z_target):
+    """Per-snapshot host h and qt at the level nearest z_target.
+
+    Returns a list of {var: 2D field} dicts, one per snapshot (one for
+    TWPICE, three for the channels), and the level height used.
+    """
     if host == "twpice":
-        return twpice_level(z_target)
-    z, T, qv, qc, qi, _ = ADAPTERS[host](0)
-    z = np.asarray(z, dtype=np.float64)
-    k = int(np.argmin(np.abs(z - z_target)))
-    h = cp * T[k].astype(np.float64) + g * z[k] + Lv * qv[k]
-    qt = np.asarray(qv[k], np.float64) + qc[k] + qi[k]
-    return {"h": h, "qt": qt}, float(z[k])
+        fields, z_used = twpice_level(z_target)
+        return [fields], z_used
+    per_snapshot, z_used = [], None
+    for snap in range(3):
+        z, T, qv, qc, qi, _ = ADAPTERS[host](snap)
+        z = np.asarray(z, dtype=np.float64)
+        k = int(np.argmin(np.abs(z - z_target)))
+        z_used = float(z[k])
+        h = cp * T[k].astype(np.float64) + g * z[k] + Lv * qv[k]
+        qt = np.asarray(qv[k], np.float64) + qc[k] + qi[k]
+        per_snapshot.append({"h": h, "qt": qt})
+    return per_snapshot, z_used
 
 
 def steam_level(host, set_tag, z_target):
@@ -145,12 +159,19 @@ def do_case(case, out):
     for host in hosts:
         for z_target in LEVELS:
             tag = f"{z_target / 1000:.0f}km"
-            sources = [("host", host_level(host, z_target), host_dx)]
+            sources = [("host", host_levels(host, z_target), host_dx)]
             for s in SETS:
-                sources.append((s, steam_level(host, s, z_target), steam_dx))
-            for name, (fields, z_used), dx in sources:
+                fields, z_used = steam_level(host, s, z_target)
+                sources.append((s, ([fields], z_used), steam_dx))
+            for name, (fields_list, z_used), dx in sources:
                 for v in VARS:
-                    lags, F = haar(fields[v], dx)
+                    # Mean of the per-snapshot F_1: at order 1 with equal
+                    # window counts per snapshot this is the pooled mean.
+                    Fs = []
+                    for fields in fields_list:
+                        lags, F = haar(fields[v], dx)
+                        Fs.append(F)
+                    F = np.mean(Fs, axis=0)
                     key = f"{case}_{host}_{v}_{tag}_{name}"
                     out[f"{key}_lags"] = lags
                     out[f"{key}_F"] = F
