@@ -104,7 +104,7 @@ def pdf_panel(ax, d, hosts, sources, v, z_km, panel, show_ylabel, threshold):
         cut = threshold * scale
         fields = {k: f[f >= cut] for k, f in fields.items()}
         hi = max((f.max() for f in fields.values() if f.size), default=1.0)
-        bins = np.logspace(np.log10(cut), np.log10(hi), 50)
+        bins = np.logspace(np.log10(cut), np.log10(hi), 51)
         ax.set_xscale("log")
     else:
         allv = np.concatenate([f for f in fields.values() if f.size])
@@ -112,7 +112,7 @@ def pdf_panel(ax, d, hosts, sources, v, z_km, panel, show_ylabel, threshold):
         # 0.01-99.99 percentile keeps every line visible instead of squeezing
         # the bulk into two bins. Outliers still land in the end bins.
         lo, hi = np.percentile(allv, [0.01, 99.99])
-        bins = np.linspace(lo, hi, 80)
+        bins = np.linspace(lo, hi, 81)
 
     for (host, s), f in fields.items():
         if f.size == 0:
