@@ -7,8 +7,10 @@ and STEAM at both flux amplitudes).
 
 An italic entry is one where objscale warned about the fit -- too few
 populated size bins, or too narrow a range of scales. A bold entry is the
-simulated case closest to MODIS in that column, which is only marked where
-MODIS reports the metric at all. Every SAM size
+simulated case closest to MODIS in that column, along with any case within
+0.01 of it -- the table's own display precision, below which a difference
+is not something to declare a winner on. Bold is only used where MODIS
+reports the metric at all. Every SAM size
 distribution earns one, because a single snapshot per case simply does not
 carry the range; the dimensions, which are measured per object, do not.
 Reading those numbers as measured would be a mistake, and italics say so on
@@ -53,6 +55,10 @@ MODIS = {
           "tau_area": None, "tau_per": 1.34},
 }
 
+# Entries this close to the best one are bolded alongside it; 0.01 is the
+# table's own display precision.
+TIE_TOLERANCE = 0.01
+
 # label -> (npz file, key prefix within it)
 CASES = (
     ("SAM-GATE", "sam_fractal_metrics.npz", "gate"),
@@ -91,23 +97,35 @@ def case_values(loaded, R):
 
 
 def closest_to_modis(values, R):
-    """{metric: label} of the case nearest the retrieval, where there is one.
+    """{metric: {labels}} of the cases nearest the retrieval.
 
-    Only where MODIS reports the metric; CF and tau_area have no reference,
-    so nothing is marked in those columns. A flagged fit can still win --
-    it stays italic, so the reader sees both facts at once.
+    Every case within TIE_TOLERANCE of the best one is marked, not just the
+    single winner: at two decimals a 0.01 separation is the smallest
+    difference the table can even show, and bolding one of two entries that
+    differ by that much states a verdict the numbers do not support.
+
+    Distances are taken on the ROUNDED values, so the rule can be checked
+    against the printed page rather than against a file the reader does not
+    have.
+
+    Only columns MODIS reports are marked; CF and tau_area have no
+    reference. A flagged fit can still win and keeps its italics, so the
+    reader sees both facts at once.
     """
     best = {}
     for key, _ in COLUMNS:
         reference = MODIS[R][key]
         if reference is None:
             continue
-        candidates = [(abs(v - reference), label)
-                      for label, entry in values.items()
-                      for v, _ in [entry[key]]
-                      if v is not None and np.isfinite(v)]
-        if candidates:
-            best[key] = min(candidates)[1]
+        distances = {label: abs(round(v, 2) - reference)
+                     for label, entry in values.items()
+                     for v, _ in [entry[key]]
+                     if v is not None and np.isfinite(v)}
+        if not distances:
+            continue
+        nearest = min(distances.values())
+        best[key] = {label for label, d in distances.items()
+                     if d <= nearest + TIE_TOLERANCE + 1e-9}
     return best
 
 
@@ -135,7 +153,7 @@ def main():
         r"Italic entries are fits objscale flagged as resting on too few "
         r"size bins or too narrow a range of scales; bold marks the "
         r"simulated case closest to the retrieval in each column that has "
-        r"one.}",
+        r"one, and any case within 0.01 of it.}",
         r"\label{tab:cloud geometry}",
         r"\begin{tabular}{l" + "c" * len(COLUMNS) + "}",
         r"\tophline",
@@ -156,7 +174,7 @@ def main():
         values = case_values(loaded, R)
         best = closest_to_modis(values, R)
         for label, _, _ in CASES:
-            cells = [cell(*values[label][key], bold=(best.get(key) == label))
+            cells = [cell(*values[label][key], bold=(label in best.get(key, ())))
                      for key, _ in COLUMNS]
             lines.append(f"{label} & " + " & ".join(cells) + r" \\")
 
