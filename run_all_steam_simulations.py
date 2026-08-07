@@ -9,9 +9,11 @@ The order is cheapest first, so a broken environment shows up in minutes
 rather than after the square campaign has run:
 
   1. hydrodynamic-comparison -- the host-matched channel and square runs
-  2. small-domain            -- two nested visualization runs
-  3. fractal-analysis        -- the square campaign (the long one: two sets
-                               of ten members, each with two nests)
+  2. fractal-analysis        -- the square campaign (the longest overall: two
+                               sets of ten members, each with two nests)
+  3. small-domain            -- two nested visualization runs, the most
+                               expensive per simulation and the only ones
+                               that want the machine to themselves
 
 Every campaign skips work already on disk, so a rerun after an interruption
 resumes rather than starting over. Nothing here parallelizes: each campaign's
@@ -30,7 +32,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent
 
 # Cheapest first; see the module docstring.
-CAMPAIGNS = ("hydrodynamic-comparison", "small-domain", "fractal-analysis")
+CAMPAIGNS = ("hydrodynamic-comparison", "fractal-analysis", "small-domain")
 
 
 def script_for(campaign):
