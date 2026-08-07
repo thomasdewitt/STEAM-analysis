@@ -241,7 +241,7 @@ def main():
         r"divided by $\cos\theta_0$, so that the retrieval and the "
         r"overhead-sun two-stream albedo used for the simulations are the "
         r"same quantity; the exponents are insensitive to this (by at most "
-        r"0.03) but CF is not. Run under the uncorrected convention of "
+        r"0.04) but CF is not. Run under the uncorrected convention of "
         r"DeWitt et al. (2026) instead, this pipeline reproduces the nine "
         rf"values that paper reports to a mean absolute difference of "
         rf"{repro:.3f}. "
