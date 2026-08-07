@@ -134,9 +134,14 @@ and `*.log`. The host originals live on the Expansion drive under
 `make_input_profiles.py` globs into `data/<host>/`.
 
 Everything under `runs/` is regenerable — including `runs/input_profiles/`,
-which is cheap to rebuild from `data/`. Figures are **not** committed
-(2026-08-07): the top-level `figs/` record was deleted and the `*.png` /
-`*.pdf` ignore rules now stand unforced, so each subfolder's `figs/` is local
-and the plotting scripts are the record. The text tables written beside the
-figures (`*_fractal_metrics.txt`, `fractal_table.tex`) are tracked, since they
+which is cheap to rebuild from `data/`.
+
+**Figures: PDFs tracked, PNGs not** (2026-08-07). Each subfolder's `figs/`
+carries both, and the PDF of each is force-added past the `*.pdf` ignore rule
+— they are the vector originals the paper's `\includegraphics` takes, and 0.44
+MB across the nine of them. The PNGs stay local: they are the same plots at
+3.5 MB, for looking at rather than for typesetting. A new figure is not
+tracked until someone `git add -f`s its PDF, so add it in the same commit as
+the script that draws it. The text tables written beside the figures
+(`*_fractal_metrics.txt`, `fractal_table.tex`) are tracked as well, since they
 carry the numbers the paper quotes.
