@@ -2,10 +2,11 @@
 """Paper production campaign: square ensembles with two nests per member.
 
 Runs the simulations and nothing else. One file per member lands in
-runs/square/, carrying the parent square whole -- every variable, refinement
-state included -- plus its 2D vertically integrated optical depth, and the two
-nests stripped to qc and qi (the condensate the fractal analysis needs). No
-statistics, no other directories written.
+runs/square/, carrying every parent variable but only three levels of each 3D
+one -- those nearest PARENT_LEVELS -- plus the parent's 2D vertically
+integrated optical depth, taken over the full column before the thinning, and
+the two nests stripped to qc and qi (the condensate the fractal analysis
+needs), at full depth. No statistics, no other directories written.
 
 Member config (2026-08-04 rulings): ukmo_ra1t profile (the least-cloudy of the
 comparison set; was TWP-ICE until its m00 delivered tau>1 cover 0.95), 2048 x
@@ -26,20 +27,39 @@ Per member, strictly serially:
      OOM-killed at 53.5 GB in-process.)
   3. nest B: refines nest A, centered 8x8 km, z = 1-5 km,
      dx = 7.8125 m (nest-A cells 192:320), + diagnostics.
-  4. write the keeper file -- the parent whole plus its tau (cloudyview,
-     unthresholded), qc/qi for each nest -- then delete the working .nc
+  4. write the keeper file -- the parent thinned to PARENT_LEVELS plus its tau
+     (cloudyview, unthresholded, full column), qc/qi for each nest -- then
+     delete the working .nc
 
 The working .nc is deleted because it is ~50 GB per member with its refinement
 state; ten members would be half a terabyte. The keeper file is the product.
-It is no longer small, and the saving over the working file is thinner than it
-looks. The parent carries all eleven 3D root fields -- 38.9 GB uncompressed at
-2048^2 x 211 -- and what the keeper drops is the class_increments groups,
-12.8 GB across the ten classes, three quarters of which is the finest class
-alone. That is a quarter of the ~51.7 GB working file, not most of it: the
-campaign's archived product is roughly 39 GB per member before compression,
-780 GB over twenty members. Dropping those groups also means the keeper cannot
-seed a new nest, since refine() reads them; cutting a further nest means
-rerunning the square.
+
+Vertical thinning (2026-08-07). The parent's eleven 3D fields are stored at
+three levels only -- the grid levels nearest 5, 10 and 15 km -- because the
+full column would not fit the campaign on disk. Measured on the one full-depth
+member: 2048^2 x 211 float32 is 3.30 GiB raw per field and the nine
+non-condensate fields compress only 1.16-1.8x, so the keeper came to 21.6 GB,
+and twenty of them 431 GB against 340 GB free. Three levels measure 0.38 GB
+per member, 7.6 GB over twenty. Nothing downstream reads a parent 3D field --
+compute_fractal_metrics.py takes tau and dx and nothing else -- and tau is
+still integrated over the whole column, in the working file, before the
+thinning happens.
+
+netCDF cannot delete a variable or a level in place, so the thinning is done
+where the keeper is written from the working file rather than as a later pass
+over the keeper; that is the same point in the run and it avoids writing
+20 GB per member only to discard it.
+
+Thinning applies to the parent group alone. The nests keep their full depth,
+and the parent's own z, dz and spheroscale are cut to the same three levels so
+the group stays self-describing. C_h_k and C_qt_k are on nz_k_max, a separate
+dimension of the original length, and stay whole -- they are the scale-class
+amplitude ladder, not a field, and they cost nothing.
+
+What the keeper drops besides levels is the class_increments groups, 12.8 GB
+across the ten classes, three quarters of which is the finest class alone.
+That is why the keeper cannot seed a new nest, since refine() reads them;
+cutting a further nest means rerunning the square.
 
 Restartable at stage granularity: a keeper file with no working .nc marks a
 member complete; while the working file exists, the square, each nest group and
@@ -115,15 +135,16 @@ NEST_B = dict(x_start=192, x_stop=320, y_start=192, y_stop=320,
 NEST_B_DX = 7.8125
 NEST_B_GROUP = "refinements/r1"
 
-# The parent group is copied whole -- every variable, refinement state
-# included -- so nothing the square produced is lost to a downstream question
-# nobody asked yet. The nests are still stripped to condensate: they exist to
-# be looked at, not analyzed further.
+# Every parent variable is copied, but each 3D one only at the levels nearest
+# these heights (2026-08-07; see the vertical-thinning note in the module
+# docstring). The nests are still stripped to condensate, at full depth: they
+# exist to be looked at, not analyzed further.
 #
-# This does NOT make the keeper refinable. refine() also wants the
-# class_increments groups, which stay behind with the working file; the three
-# state fields alone are necessary but not sufficient. Cutting a new nest
-# still means rerunning the square.
+# This does NOT make the keeper refinable, and did not before the thinning
+# either. refine() also wants the class_increments groups, which stay behind
+# with the working file. Cutting a new nest still means rerunning the square.
+PARENT_LEVELS = (5000.0, 10000.0, 15000.0)
+
 KEEP_VARS = ("qc", "qi")
 KEEP_AUX = ("x", "y", "z", "z_profile", "dz", "spheroscale", "p_bottom")
 NEST_KEEP = (*KEEP_AUX, *KEEP_VARS)
@@ -230,30 +251,66 @@ def run_nest(out_nc, which, spec_kwargs, group, parent_group, expect_xy,
         print(f"nest {which} diagnostics done", flush=True)
 
 
-def copy_keeper_group(src, dst, keep=None):
-    """Copy one group; keep=None copies every variable, else only `keep`."""
+def level_indices(z):
+    """Grid indices nearest PARENT_LEVELS, sorted ascending.
+
+    Fatal if two targets land on the same level, which would mean the grid is
+    far coarser than the campaign spec and the thinning is not doing what the
+    name says.
+    """
+    z = np.asarray(z, dtype=np.float64)
+    idx = sorted({int(np.abs(z - target).argmin()) for target in PARENT_LEVELS})
+    if len(idx) != len(PARENT_LEVELS):
+        raise RuntimeError(
+            f"the {len(PARENT_LEVELS)} targets {PARENT_LEVELS} collapsed onto "
+            f"{len(idx)} distinct levels of a {z.size}-level grid. Stopping "
+            f"rather than silently storing fewer levels than asked for.")
+    return np.array(idx, dtype=int)
+
+
+def copy_keeper_group(src, dst, keep=None, z_index=None):
+    """Copy one group; keep=None copies every variable, else only `keep`.
+
+    z_index, when given, is an ascending index array into the group's z
+    dimension: that dimension is created at its length and every variable
+    using it is thinned to those levels. Variables on a different dimension
+    that happens to be the same length (nz_k_max) are untouched.
+    """
     dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
     names = (list(src.variables) if keep is None
              else [n for n in keep if n in src.variables])
     dims_needed = {d for n in names for d in src.variables[n].dimensions}
     for name, dim in src.dimensions.items():
-        if name in dims_needed:
+        if name not in dims_needed:
+            continue
+        if name == "z" and z_index is not None:
+            dst.createDimension(name, len(z_index))
+        else:
             dst.createDimension(name, None if dim.isunlimited() else len(dim))
     for name in names:
         var = src.variables[name]
+        thin = z_index is not None and "z" in var.dimensions
+        zaxis = var.dimensions.index("z") if thin else None
+        shape = tuple(len(dst.dimensions[d]) for d in var.dimensions)
         chunks = var.chunking()
-        chunks = None if chunks == "contiguous" else chunks
+        # Clamp rather than rescale: a thinned field's stored z is shorter
+        # than the chunk the working file used.
+        chunks = (None if chunks == "contiguous"
+                  else [min(c, n) for c, n in zip(chunks, shape)])
         out = dst.createVariable(
             name, var.dtype, var.dimensions, chunksizes=chunks,
-            **compression_kwargs(True, chunks or var.shape))
+            **compression_kwargs(True, chunks or shape))
         out.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
         if var.ndim == 3:                       # copy big fields in slabs
             nx = var.shape[0]
             step = max(1, nx // 8)
             for i0 in range(0, nx, step):
-                out[i0:i0 + step] = var[i0:i0 + step]
+                slab = var[i0:i0 + step]
+                out[i0:i0 + step] = (np.take(slab, z_index, axis=zaxis)
+                                     if thin else slab)
         else:
-            out[...] = var[...]
+            data = var[...]
+            out[...] = np.take(data, z_index, axis=zaxis) if thin else data
 
 
 def write_parent_tau(src, dst_group):
@@ -295,8 +352,23 @@ def write_keeper(out_nc, out_keep):
         # Recorded so a rerun under the other setting is caught rather than
         # silently accepted as a complete member (see run_member).
         dst.run_nests = int(RUN_NESTS)
+        z_index = level_indices(src.variables["z"][:])
+        # Recorded for the same reason as run_nests: so a keeper written under
+        # a different vertical spec is caught rather than silently pooled.
+        dst.parent_z_levels = len(z_index)
         parent = dst.createGroup("parent")
-        copy_keeper_group(src, parent)
+        copy_keeper_group(src, parent, z_index=z_index)
+        z_kept = np.asarray(src.variables["z"][:], dtype=np.float64)[z_index]
+        parent.level_targets = np.array(PARENT_LEVELS, dtype="f8")
+        parent.level_indices = z_index.astype("i4")
+        parent.source_nz = len(src.dimensions["z"])
+        parent.level_note = (
+            "3D fields stored only at the levels nearest level_targets; "
+            "level_indices are into the original source_nz grid. tau is the "
+            "full-column integral, taken before the thinning.")
+        print("  parent thinned to z = "
+              + ", ".join(f"{v:.1f} m (k={k})" for v, k in zip(z_kept, z_index))
+              + f" of {parent.source_nz}", flush=True)
         write_parent_tau(src, parent)
         nests = (("nest_a", NEST_A_GROUP), ("nest_b", NEST_B_GROUP)) \
             if RUN_NESTS else ()
@@ -366,11 +438,19 @@ def run_member(set_tag, member):
     if out_keep.exists() and not out_nc.exists():
         with netCDF4.Dataset(out_keep) as ds:
             made_with = bool(getattr(ds, "run_nests", 1))
+            n_levels = int(getattr(ds, "parent_z_levels", 0))
         if made_with != RUN_NESTS:
             raise RuntimeError(
                 f"{out_keep.name} was made with RUN_NESTS={made_with}, but "
                 f"this run has RUN_NESTS={RUN_NESTS}. Move or delete it "
                 f"rather than mixing the two products in runs/square/.")
+        if n_levels != len(PARENT_LEVELS):
+            raise RuntimeError(
+                f"{out_keep.name} carries {n_levels or 'all'} parent levels, "
+                f"but this run stores {len(PARENT_LEVELS)} "
+                f"(PARENT_LEVELS={PARENT_LEVELS}). Move or delete it rather "
+                f"than mixing the two products in runs/square/. A pre-"
+                f"2026-08-07 keeper is full-depth and reports 'all'.")
         print(f"member {set_tag} m{member:02d} complete, skipping", flush=True)
         return
     verify_or_scrap(out_nc)

@@ -20,15 +20,27 @@ Run in order:
    pressure -> `runs/input_profiles/<host>.npz`. All 14 hosts by default, or
    name them on the command line.
 2. `fractal-analysis/scripts/run_steam_simulations.py` — the square campaign.
-   One file per member into `runs/square/`, holding the parent square whole —
-   every variable, refinement state included — plus the parent's 2D vertically
-   integrated optical depth, and the two nests stripped to qc and qi. That is
-   eleven 3D fields, ~39 GB per member before compression. The keeper still
-   cannot seed a new nest: `refine` also reads the `class_increments` groups,
-   which stay behind with the working file — 12.8 GB of the ~51.7 GB working
-   file, so deleting it saves less than it used to. `RUN_NESTS` switches both
-   nests on or off together; `SETS` maps a set tag onto the flux noise
-   amplitude directly.
+   One file per member into `runs/square/`, holding every parent variable but
+   each 3D one at three levels only — those nearest `PARENT_LEVELS` = 5, 10
+   and 15 km — plus the parent's 2D vertically integrated optical depth, and
+   the two nests stripped to qc and qi at full depth. The keeper still cannot
+   seed a new nest: `refine` also reads the `class_increments` groups, which
+   stay behind with the working file. `RUN_NESTS` switches both nests on or
+   off together; `SETS` maps a set tag onto the flux noise amplitude directly.
+
+   **Vertical thinning (2026-08-07).** Full-depth keepers were 21.6 GB each
+   — the eleven parent 3D fields are 3.30 GiB raw apiece at 2048² x 211 and
+   the nine non-condensate ones compress only 1.16–1.8x — so twenty came to
+   431 GB against 340 GB free. Three levels measure 0.38 GB per member, 7.6 GB
+   over twenty. Nothing downstream reads a parent 3D field: `compute_fractal_
+   metrics.py` takes `tau` and `dx` and nothing else, and `tau` is still the
+   full-column integral, computed in the working file before the thinning.
+   The parent's `z`, `dz` and `spheroscale` are cut to match; `C_h_k` and
+   `C_qt_k` are on `nz_k_max` and stay whole. The keeper records
+   `parent_z_levels` at the root and `level_targets` / `level_indices` /
+   `source_nz` on the parent group, and a keeper written under a different
+   vertical spec is refused rather than pooled — pre-thinning members must be
+   moved or deleted.
 3. `fractal-analysis/scripts/compute_fractal_metrics.py` — the paper's four
    metrics (D_f, D_e, tau_area, tau_per) over the members matched by
    `PATTERN`, pooled into one ensemble ->
