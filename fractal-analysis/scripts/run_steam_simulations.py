@@ -32,9 +32,10 @@ Per member, strictly serially:
 The working .nc is deleted because it is ~50 GB per member with its refinement
 state; ten members would be half a terabyte. The keeper file is the product.
 It is no longer small: the parent now carries every field the square wrote,
-refinement state included, so a later nest can be cut from the keeper without
-rerunning the square. What the keeper drops is the class_increments groups,
-which is where most of the working file's bulk lives.
+refinement state included. What it drops is the class_increments groups, where
+most of the working file's bulk lives -- which also means the keeper cannot
+seed a new nest, since refine() reads those groups too. Cutting a further nest
+means rerunning the square.
 
 Restartable at stage granularity: a keeper file with no working .nc marks a
 member complete; while the working file exists, the square, each nest group and
@@ -110,10 +111,15 @@ NEST_B = dict(x_start=192, x_stop=320, y_start=192, y_stop=320,
 NEST_B_DX = 7.8125
 NEST_B_GROUP = "refinements/r1"
 
-# The parent group is copied whole -- every variable, including the
-# refinement state (h_perturbation, qt_perturbation, flux_state), so a later
-# nest can be cut from the keeper without rerunning the square. The nests are
-# still stripped to condensate: they exist to be looked at, not refined again.
+# The parent group is copied whole -- every variable, refinement state
+# included -- so nothing the square produced is lost to a downstream question
+# nobody asked yet. The nests are still stripped to condensate: they exist to
+# be looked at, not analyzed further.
+#
+# This does NOT make the keeper refinable. refine() also wants the
+# class_increments groups, which stay behind with the working file; the three
+# state fields alone are necessary but not sufficient. Cutting a new nest
+# still means rerunning the square.
 KEEP_VARS = ("qc", "qi")
 KEEP_AUX = ("x", "y", "z", "z_profile", "dz", "spheroscale", "p_bottom")
 NEST_KEEP = (*KEEP_AUX, *KEEP_VARS)
