@@ -53,7 +53,9 @@ from pathlib import Path
 import numpy as np
 from pyhdf.SD import SD, SDC
 
-REPO = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parent
+BASE = HERE.parent                 # fractal-analysis/
+REPO = BASE.parent
 ARCHIVE = REPO / "data" / "MODIS_data"
 
 BAND1_SDS = "EV_250_Aggr1km_RefSB"

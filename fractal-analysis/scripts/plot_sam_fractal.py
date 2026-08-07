@@ -28,8 +28,11 @@ from plot_fractal_metrics import (PANELS, THRESHOLD_COLORS, LABEL, positive,
                                   series, guide, style, write_table)
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / "sam_fractal_metrics.npz"
-OUT = HERE / "sam_fractal_metrics"
+BASE = HERE.parent                 # fractal-analysis/
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
+DATA = OUTPUT / "sam_fractal_metrics.npz"
+OUT = FIGS / "sam_fractal_metrics"
 
 CASE_NAME = {"twpice": "SAM-TWPICE", "gate": "SAM-GATE"}
 CASE_STYLE = {"twpice": "-", "gate": (0, (4, 2))}

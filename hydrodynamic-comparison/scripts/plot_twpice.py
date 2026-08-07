@@ -26,7 +26,7 @@ The condensate panels are distributions of the CLOUDY cells only, on a
 logarithmic axis -- most cells hold no condensate at all, and a density over
 everything would be one spike at zero and no visible shape.
 
-Styling follows paper/concept-figs (turblib.py), as fractal_analysis does.
+Styling follows paper/concept-figs (turblib.py), as fractal-analysis does.
 
 Usage: python plot_twpice.py
 """

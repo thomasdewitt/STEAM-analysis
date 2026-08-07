@@ -19,14 +19,25 @@ Run in order:
    over every archived timestep, on a uniform 50 m grid to 20 km, plus surface
    pressure -> `runs/input_profiles/<host>.npz`. All 14 hosts by default, or
    name them on the command line.
-2. `fractal_analysis/run_paper_squares.py` — the square campaign. One file per
-   member into `runs/square/`, holding qc and qi only plus the parent's 2D
-   vertically integrated optical depth. `RUN_NESTS` switches both nests on or
-   off together; `SETS` maps a set tag onto the flux noise amplitude directly.
-3. `fractal_analysis/compute_fractal_metrics.py` — the paper's four metrics
-   (D_f, D_e, tau_area, tau_per) over the members matched by `PATTERN`, pooled
-   into one ensemble -> `fractal_analysis/fractal_metrics.npz`.
-4. `fractal_analysis/plot_fractal_metrics.py` — the four scaling functions.
+2. `fractal-analysis/scripts/run_steam_simulations.py` — the square campaign.
+   One file per member into `runs/square/`, holding the parent square whole —
+   every variable, refinement state included, so a later nest can be cut
+   without rerunning it — plus the parent's 2D vertically integrated optical
+   depth, and the two nests stripped to qc and qi. `RUN_NESTS` switches both
+   nests on or off together; `SETS` maps a set tag onto the flux noise
+   amplitude directly.
+3. `fractal-analysis/scripts/compute_fractal_metrics.py` — the paper's four
+   metrics (D_f, D_e, tau_area, tau_per) over the members matched by
+   `PATTERN`, pooled into one ensemble ->
+   `fractal-analysis/output/fractal_metrics_<set>.npz`.
+4. `fractal-analysis/scripts/plot_fractal_metrics.py` — the four scaling
+   functions.
+
+Each campaign subfolder lays out the same way: `scripts/` for code, `output/`
+for cached statistics, `figs/` for figures and the text tables beside them.
+Every subfolder's run generator is `scripts/run_steam_simulations.py`;
+`run_all_steam_simulations.py` at the repo root calls all three in sequence,
+cheapest first, skipping whatever is already on disk.
 
 Conventions that matter in step 3: every matched member is passed to objscale
 in a single call per metric, because these estimators are regressions and
@@ -42,8 +53,8 @@ and 24 h exist only as 210-level gap files rebuilt from `.dat`); it archives
 only the combined condensate `QN`, so the liquid/ice split uses SAM's linear
 ramp — all liquid at 0 C, all ice at -38 C — applied at native resolution,
 before coarsening, since it does not commute with the average.
-`generate.py` runs one STEAM simulation per host per flux amplitude, on the
-host's domain at twice its horizontal spacing; then a compute/plot pair per
+`scripts/run_steam_simulations.py` runs one STEAM simulation per host per
+flux amplitude, on the host's domain at twice its horizontal spacing; then a compute/plot pair per
 figure, with `common.py` holding the matching rule and the styling.
 
 Two resolution conventions, deliberately different:
@@ -67,19 +78,28 @@ regenerable.
 
 ## small-domain/
 
-`generate.py` writes two finely resolved runs for visualization —
-20.48 x 7.68 km at dx = 10 m, surface to 5 km, on the square campaign's
-ukmo_ra1t profile, one per flux amplitude, into `runs/small-domain/`. The
-vertical spacing follows dx through the aspect ratio (dz = 7.34 m,
-681 levels), so the peak working set is ~46 GiB and the runs want the machine
-to themselves.
+`scripts/run_steam_simulations.py` writes one finely resolved run per flux
+amplitude for visualization, on the square campaign's ukmo_ra1t profile, into
+`runs/small-domain/`. A 40.96 x 20.48 km parent at dx = 20 m, surface to 5 km,
+carries a centered 2.56 x 2.56 km nest at dx = 5 m to full depth
+(`refinements/r0`).
+
+The vertical spacing follows dx through the aspect ratio, dz = k_z(2 dx) / 2:
+the parent is (2048, 1024, 463) at dz = 10.80 m, a 3.62 GiB field and ~38 GiB
+at the cascade's peak, and the nest is (512, 512, 1001) at dz = 5.00 m,
+0.98 GiB and ~10 GiB. Doubling dx from the earlier 10 m run is what makes the
+wider footprint fit — it halves the level count, so the parent field is
+actually smaller than the 2048 x 768 run it replaces. The nest's dz stops
+falling with dx because 2 dx has reached the 10 m spheroscale and the finest
+class is isotropic. The runs want the machine to themselves.
 
 ## Dependencies
 
 `uv sync` against `pyproject.toml`. `steam` and `objscale` are editable path
 dependencies on their sibling repos.
 
-`cloudyview` is **not** managed here: `run_paper_squares.py` loads
+`cloudyview` is **not** managed here: the square campaign's
+`run_steam_simulations.py` loads
 `optical_depth.py` directly from `~/code-and-data/cloudyview/` by file path,
 because it is not installed in this venv. The campaign fails at import, not
 mid-run, if that repo is missing.
@@ -99,5 +119,9 @@ and `*.log`. The host originals live on the Expansion drive under
 `make_input_profiles.py` globs into `data/<host>/`.
 
 Everything under `runs/` is regenerable — including `runs/input_profiles/`,
-which is cheap to rebuild from `data/`. Figures under `figs/` are committed as
-the figure record, which means force-adding them past the `*.png` rule.
+which is cheap to rebuild from `data/`. Figures are **not** committed
+(2026-08-07): the top-level `figs/` record was deleted and the `*.png` /
+`*.pdf` ignore rules now stand unforced, so each subfolder's `figs/` is local
+and the plotting scripts are the record. The text tables written beside the
+figures (`*_fractal_metrics.txt`, `fractal_table.tex`) are tracked, since they
+carry the numbers the paper quotes.

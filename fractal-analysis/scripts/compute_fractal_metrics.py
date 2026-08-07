@@ -16,7 +16,7 @@ DeWitt & Garrett (2024) and DeWitt et al. (2026). No fitting ranges, bin
 counts or thresholds are overridden.
 
 Clouds are albedo masks of the vertically integrated optical depth stored
-in each member's parent group by run_paper_squares.py, at each of three
+in each member's parent group by run_steam_simulations.py, at each of three
 thresholds R = 0.1, 0.2, 0.3 -- the same thresholds as the satellite
 retrievals of DeWitt et al. (2026), so the exponents are directly
 comparable. See albedo.py for the two-stream mapping; every metric is
@@ -52,15 +52,17 @@ PATTERN = "sq1km_C1large*.nc"
 # campaign, where ten members already oversample the domain.
 POINT_REDUCTION_FACTOR = 10
 
-REPO = Path(__file__).resolve().parent.parent
-RUNS = REPO / "runs" / "square"
 HERE = Path(__file__).resolve().parent
+BASE = HERE.parent                 # fractal-analysis/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+RUNS = REPO / "runs" / "square"
 
 
 def out_path(pattern):
     """fractal_metrics_<set>.npz, from the pattern's set tag."""
     tag = pattern.split("_")[1].split("*")[0]
-    return HERE / f"fractal_metrics_{tag}.npz"
+    return OUTPUT / f"fractal_metrics_{tag}.npz"
 
 
 def load_tau(pattern):
@@ -78,7 +80,7 @@ def load_tau(pattern):
             if "tau" not in parent.variables:
                 raise SystemExit(
                     f"{path.name} has no parent tau -- it predates the "
-                    f"optical-depth step in run_paper_squares.py")
+                    f"optical-depth step in run_steam_simulations.py")
             tau = parent.variables["tau"][:]
             dx = float(parent.getncattr("dx")) / 1000.0    # m -> km
         if dx_km is None:
@@ -202,6 +204,7 @@ def main():
               f"tau_area {out[f'{tag}_tau_area']:.3f}   "
               f"tau_per {out[f'{tag}_tau_per']:.3f}", flush=True)
 
+    OUTPUT.mkdir(exist_ok=True)
     np.savez(out_file, **out)
     if not all(np.isfinite(out[f"{threshold_tag(R)}_{k}"])
                for R in ALBEDO_THRESHOLDS

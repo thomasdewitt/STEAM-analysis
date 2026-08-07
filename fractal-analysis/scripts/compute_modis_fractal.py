@@ -42,6 +42,8 @@ from albedo import ALBEDO_THRESHOLDS, threshold_tag
 from compute_fractal_metrics import metrics_at
 
 HERE = Path(__file__).resolve().parent
+BASE = HERE.parent                 # fractal-analysis/
+OUTPUT = BASE / "output"
 
 # The archive is 72 granules of ~2.5e6 pixels, far more edge points than the
 # correlation integral needs; the square campaign uses 10 for ten members.
@@ -50,7 +52,7 @@ POINT_REDUCTION_FACTOR = 100
 
 def out_path(solar_correction):
     tag = "_sza" if solar_correction else ""
-    return HERE / f"modis_fractal_metrics{tag}.npz"
+    return OUTPUT / f"modis_fractal_metrics{tag}.npz"
 
 
 def load_archive(solar_correction):
@@ -154,6 +156,7 @@ def main():
               f"tau_per {out[f'{tag}_tau_per']:.3f}", flush=True)
 
     path = out_path(solar_correction)
+    OUTPUT.mkdir(exist_ok=True)
     np.savez(path, **out)
     print(f"\nwrote {path.name}")
 

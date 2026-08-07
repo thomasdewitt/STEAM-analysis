@@ -29,7 +29,9 @@ from plot_fractal_metrics import (PANELS, THRESHOLD_COLORS, LABEL, positive,
                                   series, guide, style, write_table)
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "modis_fractal_metrics"
+BASE = HERE.parent                 # fractal-analysis/
+FIGS = BASE / "figs"
+OUT = FIGS / "modis_fractal_metrics"
 
 CONVENTIONS = ((False, "as stored", "-"),
                (True, r"$/\cos\theta_0$", (0, (4, 2))))

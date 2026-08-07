@@ -21,7 +21,7 @@ only honest fix. Treat the numbers as indicative rather than measured, and
 read the scaling functions in the figure before quoting any of them.
 
 Optical depth comes from cloudyview's SAM relationships, the same call
-run_paper_squares.py makes for the STEAM squares. GATE's liquid/ice split is
+run_steam_simulations.py makes for the STEAM squares. GATE's liquid/ice split is
 SAM's linear ramp applied at native resolution (see make_input_profiles.py).
 
 Usage: python compute_sam_fractal.py
@@ -39,14 +39,16 @@ from albedo import ALBEDO_THRESHOLDS, tau_for_albedo, threshold_tag
 from compute_fractal_metrics import metrics_at
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parent
-OUT = HERE / "sam_fractal_metrics.npz"
+BASE = HERE.parent                 # fractal-analysis/
+REPO = BASE.parent
+OUTPUT = BASE / "output"
+OUT = OUTPUT / "sam_fractal_metrics.npz"
 
 sys.path.insert(0, str(REPO))
 from make_input_profiles import read_var, liquid_fraction   # noqa: E402
 
 # cloudyview is not installed in this venv; load the one module by path, as
-# run_paper_squares.py does.
+# run_steam_simulations.py does.
 _spec = importlib.util.spec_from_file_location(
     "cv_optical_depth",
     Path.home() / "code-and-data/cloudyview/cloudyview/optical_depth.py")
@@ -139,6 +141,7 @@ def main():
             print(line, flush=True)
         del tau
 
+    OUTPUT.mkdir(exist_ok=True)
     np.savez(OUT, **out)
     print(f"\nwrote {OUT.name}")
 

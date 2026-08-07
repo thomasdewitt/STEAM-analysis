@@ -2,9 +2,10 @@
 """Paper production campaign: square ensembles with two nests per member.
 
 Runs the simulations and nothing else. One file per member lands in
-runs/square/, carrying qc and qi only (the condensate the fractal analysis
-needs) for the parent square and both nests, plus the parent's 2D vertically
-integrated optical depth. No statistics, no other directories written.
+runs/square/, carrying the parent square whole -- every variable, refinement
+state included -- plus its 2D vertically integrated optical depth, and the two
+nests stripped to qc and qi (the condensate the fractal analysis needs). No
+statistics, no other directories written.
 
 Member config (2026-08-04 rulings): ukmo_ra1t profile (the least-cloudy of the
 comparison set; was TWP-ICE until its m00 delivered tau>1 cover 0.95), 2048 x
@@ -25,11 +26,15 @@ Per member, strictly serially:
      OOM-killed at 53.5 GB in-process.)
   3. nest B: refines nest A, centered 8x8 km, z = 1-5 km,
      dx = 7.8125 m (nest-A cells 192:320), + diagnostics.
-  4. write the keeper file -- qc/qi per group, plus the parent's tau
-     (cloudyview, unthresholded) -- then delete the working .nc
+  4. write the keeper file -- the parent whole plus its tau (cloudyview,
+     unthresholded), qc/qi for each nest -- then delete the working .nc
 
 The working .nc is deleted because it is ~50 GB per member with its refinement
 state; ten members would be half a terabyte. The keeper file is the product.
+It is no longer small: the parent now carries every field the square wrote,
+refinement state included, so a later nest can be cut from the keeper without
+rerunning the square. What the keeper drops is the class_increments groups,
+which is where most of the working file's bulk lives.
 
 Restartable at stage granularity: a keeper file with no working .nc marks a
 member complete; while the working file exists, the square, each nest group and
@@ -38,7 +43,7 @@ each diagnostics pass is skipped if already present.
 Input profiles come from runs/input_profiles/, built by make_input_profiles.py
 at the repo root.
 
-Usage: python run_paper_squares.py [SET [MEMBER]]
+Usage: python run_steam_simulations.py [SET [MEMBER]]
   no args         -> full sweep (all sets, N_MEMBERS members each)
   C1003           -> that set only
   C1003 0         -> that single member
@@ -69,7 +74,9 @@ _spec = importlib.util.spec_from_file_location(
 cv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cv)
 
-REPO = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parent
+BASE = HERE.parent                 # fractal-analysis/
+REPO = BASE.parent
 RUNS = REPO / "runs" / "square"
 PROFILES = REPO / "runs" / "input_profiles"
 
@@ -103,9 +110,13 @@ NEST_B = dict(x_start=192, x_stop=320, y_start=192, y_stop=320,
 NEST_B_DX = 7.8125
 NEST_B_GROUP = "refinements/r1"
 
-# Only condensate survives into the keeper file, for the parent and any nests.
+# The parent group is copied whole -- every variable, including the
+# refinement state (h_perturbation, qt_perturbation, flux_state), so a later
+# nest can be cut from the keeper without rerunning the square. The nests are
+# still stripped to condensate: they exist to be looked at, not refined again.
 KEEP_VARS = ("qc", "qi")
 KEEP_AUX = ("x", "y", "z", "z_profile", "dz", "spheroscale", "p_bottom")
+NEST_KEEP = (*KEEP_AUX, *KEEP_VARS)
 
 # Reported only, as a sanity signal while the campaign runs; the stored tau
 # field is unthresholded, so any threshold can be applied downstream.
@@ -209,10 +220,11 @@ def run_nest(out_nc, which, spec_kwargs, group, parent_group, expect_xy,
         print(f"nest {which} diagnostics done", flush=True)
 
 
-def copy_keeper_group(src, dst):
-    """Copy one group keeping only the keeper variables."""
+def copy_keeper_group(src, dst, keep=None):
+    """Copy one group; keep=None copies every variable, else only `keep`."""
     dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
-    names = [n for n in (*KEEP_AUX, *KEEP_VARS) if n in src.variables]
+    names = (list(src.variables) if keep is None
+             else [n for n in keep if n in src.variables])
     dims_needed = {d for n in names for d in src.variables[n].dimensions}
     for name, dim in src.dimensions.items():
         if name in dims_needed:
@@ -282,7 +294,7 @@ def write_keeper(out_nc, out_keep):
             grp = src
             for part in group.split("/"):
                 grp = grp.groups[part]
-            copy_keeper_group(grp, dst.createGroup(label))
+            copy_keeper_group(grp, dst.createGroup(label), keep=NEST_KEEP)
     tmp.rename(out_keep)
     print(f"wrote {out_keep.name} "
           f"({out_keep.stat().st_size / 1e9:.2f} GB)", flush=True)

@@ -40,7 +40,10 @@ import numpy as np
 from albedo import ALBEDO_THRESHOLDS, threshold_tag
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE / "fractal_table.tex"
+BASE = HERE.parent                 # fractal-analysis/
+OUTPUT = BASE / "output"
+FIGS = BASE / "figs"
+OUT = FIGS / "fractal_table.tex"
 
 # metric key -> column header
 COLUMNS = (
@@ -198,14 +201,14 @@ def main():
     loaded = {}
     for _, filename, _ in CASES:
         if filename not in loaded:
-            path = HERE / filename
+            path = OUTPUT / filename
             if not path.exists():
                 raise SystemExit(
                     f"{filename} not found -- run compute_fractal_metrics.py "
                     f"(once per set) and compute_sam_fractal.py first")
             loaded[filename] = dict(np.load(path, allow_pickle=False))
 
-    modis_path = HERE / modis_file()
+    modis_path = OUTPUT / modis_file()
     if not modis_path.exists():
         raise SystemExit(
             f"{modis_path.name} not found -- run compute_modis_fractal.py"
@@ -215,7 +218,7 @@ def main():
     # The reproduction check is always against the uncorrected file: the
     # published table was computed that way, so that is the only comparison
     # that tests the pipeline rather than the convention.
-    check_path = HERE / "modis_fractal_metrics.npz"
+    check_path = OUTPUT / "modis_fractal_metrics.npz"
     if not check_path.exists():
         raise SystemExit(
             "modis_fractal_metrics.npz not found -- the reproduction check "
