@@ -22,9 +22,11 @@ Run in order:
 2. `fractal-analysis/scripts/run_steam_simulations.py` — the square campaign.
    One file per member into `runs/square/`, holding the parent square whole —
    every variable, refinement state included — plus the parent's 2D vertically
-   integrated optical depth, and the two nests stripped to qc and qi. The
-   keeper still cannot seed a new nest: `refine` also reads the
-   `class_increments` groups, which stay behind with the working file. `RUN_NESTS` switches both
+   integrated optical depth, and the two nests stripped to qc and qi. That is
+   eleven 3D fields, ~39 GB per member before compression. The keeper still
+   cannot seed a new nest: `refine` also reads the `class_increments` groups,
+   which stay behind with the working file — 12.8 GB of the ~51.7 GB working
+   file, so deleting it saves less than it used to. `RUN_NESTS` switches both
    nests on or off together; `SETS` maps a set tag onto the flux noise
    amplitude directly.
 3. `fractal-analysis/scripts/compute_fractal_metrics.py` — the paper's four

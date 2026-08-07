@@ -31,11 +31,15 @@ Per member, strictly serially:
 
 The working .nc is deleted because it is ~50 GB per member with its refinement
 state; ten members would be half a terabyte. The keeper file is the product.
-It is no longer small: the parent now carries every field the square wrote,
-refinement state included. What it drops is the class_increments groups, where
-most of the working file's bulk lives -- which also means the keeper cannot
-seed a new nest, since refine() reads those groups too. Cutting a further nest
-means rerunning the square.
+It is no longer small, and the saving over the working file is thinner than it
+looks. The parent carries all eleven 3D root fields -- 38.9 GB uncompressed at
+2048^2 x 211 -- and what the keeper drops is the class_increments groups,
+12.8 GB across the ten classes, three quarters of which is the finest class
+alone. That is a quarter of the ~51.7 GB working file, not most of it: the
+campaign's archived product is roughly 39 GB per member before compression,
+780 GB over twenty members. Dropping those groups also means the keeper cannot
+seed a new nest, since refine() reads them; cutting a further nest means
+rerunning the square.
 
 Restartable at stage granularity: a keeper file with no working .nc marks a
 member complete; while the working file exists, the square, each nest group and
