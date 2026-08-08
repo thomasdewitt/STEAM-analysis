@@ -8,10 +8,13 @@ and for both STEAM runs driven by its profile. Writes scaling_stats.npz.
 
 NATIVE RESOLUTION, deliberately, and unlike the profile and PDF figures:
 nothing is coarsened on either side. The host and STEAM curves therefore
-start at different smallest lags -- 2 x 100 m against 2 x 200 m for TWPICE,
-2 x 3 km against 2 x 6 km for the channels -- and where they overlap they are
-measuring the same physical scales. A scaling function is the one place where
-matching resolutions would destroy the thing being measured.
+start at different smallest lags -- 2 x 100 m against 2 x 200 m for the SAM
+cases, 2 x 3 km against 2 x 6 km for the channels -- and where they overlap
+they are measuring the same physical scales. A scaling function is the one
+place where matching resolutions would destroy the thing being measured.
+
+The twpice case covers both SAM LES, TWPICE and GATE, as the profile and PDF
+figures do; the rcemip case covers the nine channels.
 
 The transform runs along the longer horizontal axis with periodic=True, so
 the shorter axis is pooled as independent realizations in a single call
@@ -22,7 +25,7 @@ metres.
 All three archived channel snapshots are used: F_1 is computed per snapshot
 and averaged, which at order 1 with equal window counts per snapshot IS the
 pooled mean. (Until 2026-08-06 only the first snapshot was used -- a bug
-against the stated methodology.) TWPICE has a single snapshot.
+against the stated methodology.) TWPICE and GATE have one snapshot each.
 
 The level mean is subtracted before the transform. The Haar kernel is
 zero-mean so this changes nothing analytically, but h is O(3e5) J/kg while
@@ -67,10 +70,15 @@ LEVELS = (5000.0, 10000.0)
 SNAPSHOT = "0000003450"
 HALF_DECADE = 0.25          # +/- this many dex about each lag
 
+GATE_FILE = "GATE_IDEAL_S_2048x2048x256_100m_2s_2048_0000041400.nc"   # 23 h
+
+# case -> (hosts, host dx [m]). STEAM's dx is not listed: it is read from each
+# run's own `dx` attribute, so changing a domain in run_steam_simulations.py
+# does not leave a stale number here.
 CASES = {
-    "twpice": (("twpice",), 100.0, 200.0),
+    "twpice": (("twpice", "gate"), 100.0),
     "rcemip": (("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
-                "scale", "ucla", "icon_lem", "icon_nwp"), 3000.0, 6000.0),
+                "scale", "ucla", "icon_lem", "icon_nwp"), 3000.0),
 }
 
 si.set_numerical_precision("float64")
@@ -121,14 +129,35 @@ def twpice_level(z_target):
     return {"h": h, "qt": qt}, float(z[k])
 
 
+def gate_level(z_target):
+    """GATE h and qt at one level, native 100 m, sliced in the file.
+
+    SAM's liquid/ice ramp, which the profile and PDF figures apply to the
+    archived QN, is not needed here: only qv and the total condensate enter h
+    and qt, so qt is qv + QN however the condensate is partitioned.
+    """
+    with netCDF4.Dataset(REPO / "data" / "gate" / GATE_FILE) as ds:
+        ds.set_auto_mask(False)
+        z = np.asarray(ds.variables["z"][:], dtype=np.float64)
+        k = int(np.argmin(np.abs(z - z_target)))
+        T = np.asarray(ds.variables["TABS"][0, k], dtype=np.float64)
+        qv = np.asarray(ds.variables["QV"][0, k], dtype=np.float64) * 1e-3
+        qn = np.asarray(ds.variables["QN"][0, k], dtype=np.float64) * 1e-3
+    h = cp * T + g * z[k] + Lv * qv
+    return {"h": h, "qt": qv + qn}, float(z[k])
+
+
+SINGLE_SNAPSHOT = {"twpice": twpice_level, "gate": gate_level}
+
+
 def host_levels(host, z_target):
     """Per-snapshot host h and qt at the level nearest z_target.
 
-    Returns a list of {var: 2D field} dicts, one per snapshot (one for
-    TWPICE, three for the channels), and the level height used.
+    Returns a list of {var: 2D field} dicts, one per snapshot (one for each
+    SAM case, three for the channels), and the level height used.
     """
-    if host == "twpice":
-        fields, z_used = twpice_level(z_target)
+    if host in SINGLE_SNAPSHOT:
+        fields, z_used = SINGLE_SNAPSHOT[host](z_target)
         return [fields], z_used
     per_snapshot, z_used = [], None
     for snap in range(3):
@@ -143,27 +172,33 @@ def host_levels(host, z_target):
 
 
 def steam_level(host, set_tag, z_target):
-    """STEAM h and qt at the level nearest z_target."""
+    """STEAM h and qt at the level nearest z_target, with the run's own dx.
+
+    dx comes from the file rather than from a table here, so a run regenerated
+    on a different domain is measured on the grid it actually has.
+    """
     with netCDF4.Dataset(RUNS / f"{host}_{set_tag}.nc") as ds:
         ds.set_auto_mask(False)
         z = ds.variables["z"][:].astype(np.float64)
         k = int(np.argmin(np.abs(z - z_target)))
         fields = {v: np.asarray(ds.variables[v][:, :, k], np.float64)
                   for v in VARS}
-    return fields, float(z[k])
+        dx = float(ds.dx)
+    return fields, float(z[k]), dx
 
 
 def do_case(case, out):
-    hosts, host_dx, steam_dx = CASES[case]
+    hosts, host_dx = CASES[case]
     out[f"{case}_hosts"] = np.array(hosts)
     for host in hosts:
         for z_target in LEVELS:
             tag = f"{z_target / 1000:.0f}km"
-            sources = [("host", host_levels(host, z_target), host_dx)]
+            fields_list, z_host = host_levels(host, z_target)
+            sources = [("host", fields_list, z_host, host_dx)]
             for s in SETS:
-                fields, z_used = steam_level(host, s, z_target)
-                sources.append((s, ([fields], z_used), steam_dx))
-            for name, (fields_list, z_used), dx in sources:
+                fields, z_steam, steam_dx = steam_level(host, s, z_target)
+                sources.append((s, [fields], z_steam, steam_dx))
+            for name, fields_list, z_used, dx in sources:
                 for v in VARS:
                     # Mean of the per-snapshot F_1: at order 1 with equal
                     # window counts per snapshot this is the pooled mean.
