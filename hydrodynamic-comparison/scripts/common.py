@@ -70,6 +70,26 @@ def coarsen_xy(a, f):
                                                       dtype=np.float64)
 
 
+def coarsen_factor(steam_dx, host_dx):
+    """Horizontal block factor that puts the host on STEAM's spacing.
+
+    Derived from the run's own dx rather than written down, for the same
+    reason match_factors derives the vertical factors from the two z axes:
+    these figures claim the two grids are on one horizontal spacing, and a
+    constant here would keep claiming it after a domain in
+    run_steam_simulations.py moved. A non-integer ratio is fatal -- block
+    averaging cannot express it, and silently rounding would mismatch the
+    grids by whatever the rounding threw away.
+    """
+    f = steam_dx / host_dx
+    if abs(f - round(f)) > 1e-9 or round(f) < 1:
+        raise SystemExit(
+            f"STEAM dx = {steam_dx:g} m is not an integer multiple of the "
+            f"host's {host_dx:g} m (ratio {f:g}); the two grids cannot be "
+            f"matched by block averaging")
+    return int(round(f))
+
+
 def match_factors(z_host, z_steam):
     """Per-level coarsening factors, host and STEAM, under the standing rule.
 

@@ -61,7 +61,7 @@ OUTER_SCALE = 40960.0               # the full long dimension
 SPHEROSCALE_CONSTANT = 10.0
 DOMAIN_HEIGHT = 5000.0
 PROFILE_DZ = 50.0
-DEVICE = "cpu"
+DEVICE = "cuda"
 
 # Centered nest: 512 x 512 cells at dx = 5 m (2.56 x 2.56 km), full depth.
 # 2560 m spans 128 parent cells at dx = 20 m, so the window is the middle 128

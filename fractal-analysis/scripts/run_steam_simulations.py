@@ -10,10 +10,14 @@ needs), at full depth. No statistics, no other directories written.
 
 Member config (2026-08-04 rulings): ukmo_ra1t profile (the least-cloudy of the
 comparison set; was TWP-ICE until its m00 delivered tau>1 cover 0.95), 2048 x
-2048 at dx = 1 km (2048 km square), outer scale L = 1024 km under the
-convention L = (longest domain dimension) / 2, constant 10 m spheroscale, H_h
-and lambda at package defaults, anchored bounds (supp S2 as amended
-2026-07-27), domain top 20 km, CUDA.
+2048 at dx = 1 km (2048 km square), outer scale L = OUTER_SCALE below (the
+convention has been the longest domain dimension, whole or halved), constant
+10 m spheroscale, H_h and lambda at package defaults, anchored bounds (supp
+S2 as amended 2026-07-27), domain top 20 km, CUDA.
+
+A keeper on disk is only reused if the run attributes it recorded still match
+that config -- see campaign_spec -- so moving a knob mid-campaign stops the
+run rather than pooling two experiments.
 
 RUN_NESTS switches the two nests on or off together. With it off, the square is
 run without refinement state as well, and the keeper file holds the parent
@@ -114,14 +118,14 @@ SETS = {  # set tag -> c, the flux noise amplitude (steam.simulate.FLUX_SCALE)
 N_MEMBERS = 10
 NX = 2048
 DX = 1000.0
-OUTER_SCALE = 1024e3       # L = longest domain dimension / 2 (2026-08-04)
+OUTER_SCALE = 2048e3       # L = the full domain (see campaign_spec)
 SPHEROSCALE_CONSTANT = 10.0
 DOMAIN_HEIGHT = 20000.0
 PROFILE_DZ = 50.0
 SQUARE_NZ = 211            # ruled expectation; mismatch is fatal
 
-DEVICE = 'cpu'
-RUN_NESTS = True
+DEVICE = 'cuda'
+RUN_NESTS = False
 
 # Nest A: centered 32x32 km, full depth, target dx = 62.5 m.
 NEST_A = dict(x_start=1008, x_stop=1040, y_start=1008, y_stop=1040,
@@ -152,6 +156,29 @@ NEST_KEEP = (*KEEP_AUX, *KEEP_VARS)
 # Reported only, as a sanity signal while the campaign runs; the stored tau
 # field is unthresholded, so any threshold can be applied downstream.
 TAU_THRESHOLD = 1.0
+
+
+def campaign_spec(set_tag):
+    """The run attributes a keeper must match to be a member of this ensemble.
+
+    RUN_NESTS and PARENT_LEVELS are checked separately because they change the
+    product's contents; these change the physics behind it. A keeper written
+    before one of these knobs moved is a different experiment, and since
+    compute_fractal_metrics.py pools everything matching its PATTERN into a
+    single regression, pooling the two would be silent.
+    """
+    return {"dx": DX, "nx": NX, "ny": NX, "outer_scale": OUTER_SCALE,
+            "flux_noise_scale": SETS[set_tag]}
+
+
+def spec_mismatches(ds, set_tag):
+    """Attributes of an existing keeper that disagree with the config."""
+    bad = {}
+    for attr, want in campaign_spec(set_tag).items():
+        got = getattr(ds, attr, None)
+        if got is None or abs(float(got) - want) > 1e-9 * max(1.0, abs(want)):
+            bad[attr] = ("missing" if got is None else f"{float(got):g}", want)
+    return bad
 
 
 def working_path(set_tag, member):
@@ -439,6 +466,14 @@ def run_member(set_tag, member):
         with netCDF4.Dataset(out_keep) as ds:
             made_with = bool(getattr(ds, "run_nests", 1))
             n_levels = int(getattr(ds, "parent_z_levels", 0))
+            bad = spec_mismatches(ds, set_tag)
+        if bad:
+            detail = ", ".join(f"{a} = {got} (this run: {want:g})"
+                               for a, (got, want) in bad.items())
+            raise RuntimeError(
+                f"{out_keep.name} was made under a different campaign spec: "
+                f"{detail}. Move or delete it rather than pooling two "
+                f"experiments in runs/square/.")
         if made_with != RUN_NESTS:
             raise RuntimeError(
                 f"{out_keep.name} was made with RUN_NESTS={made_with}, but "

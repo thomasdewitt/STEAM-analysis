@@ -19,8 +19,9 @@ applied before coarsening; TWPICE archives QC and QI directly. Worth
 remembering when reading panels c and d in particular.
 
 Both figures are drawn on the matched grid built by the compute step: the
-host block-averaged 2x2 to STEAM's 200 m, and whichever field is finer
-vertically averaged per level to bring the two spacings closest.
+host block-averaged onto STEAM's spacing, and whichever field is finer
+vertically averaged per level to bring the two spacings closest. The factors
+actually used are printed at run time rather than quoted here.
 
 The condensate panels are distributions of the CLOUDY cells only, on a
 logarithmic axis -- most cells hold no condensate at all, and a density over
@@ -166,10 +167,12 @@ def main():
 
     for case in cases:
         n_steam, n_host = d[f"{case}_n_steam"], d[f"{case}_n_host"]
+        f = int(d[f"{case}_xy_coarsen"])
         print(f"{case}: {d[f'{case}_z'].size} levels to "
-              f"{d[f'{case}_z'].max() / 1000:.1f} km; host 2x2 coarsened to "
-              f"200 m; STEAM vertically coarsened by {n_steam.min()}-"
-              f"{n_steam.max()}, host by {n_host.min()}-{n_host.max()}")
+              f"{d[f'{case}_z'].max() / 1000:.1f} km; host {f}x{f} coarsened "
+              f"to {float(d[f'{case}_dx']):.0f} m; STEAM vertically coarsened "
+              f"by {n_steam.min()}-{n_steam.max()}, host by "
+              f"{n_host.min()}-{n_host.max()}")
     print(f"cloud fraction threshold {float(d['cloud_kgkg']) * 1e3:g} g/kg")
 
     save(profiles(d, cases, sources), "twpice_profiles")

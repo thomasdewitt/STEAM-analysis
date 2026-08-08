@@ -31,9 +31,11 @@ STEAM is ~5x finer vertically. The channels are on the RCEMIP stretched grid
 98-level grid -- so STEAM is ~2x finer than most of them and already matched
 to UKMO.
 
-Outer scale: L = (longest domain dimension) / 2 for TWPICE, / 4 for the
-channels. The channels' short axis is far below L, so it is a strip axis --
-the coarsest classes are kernel-folded onto it.
+Outer scale: L = (longest domain dimension) / d, with the divisor d the last
+entry of each HOSTS row. The realized L is printed per run rather than
+recorded here, so moving a divisor cannot leave a wrong number behind. The
+channels' short axis is far below L either way, so it is a strip axis -- the
+coarsest classes are kernel-folded onto it.
 
 Everything else is the frozen config: constant 10 m spheroscale, anchored
 bounds (supplement S2 as amended 2026-07-27), domain top 20 km, H_h and
@@ -71,10 +73,10 @@ PROFILES = REPO / "runs" / "input_profiles"
 
 # host -> STEAM's (nx, ny, dx [m]) and the divisor d in
 # L = (longest domain dimension) / d.
-CHANNEL = (1024, 64, 6000.0, 4)     # 6144 x 384 km, L = 1536 km
+CHANNEL = (1024, 64, 6000.0, 1)     # 6144 x 384 km
 
 HOSTS = {
-    "twpice":            (1024, 1024, 200.0, 2),   # 204.8 km sq, L = 102.4 km
+    "twpice":            (1024, 1024, 200.0, 1),   # 204.8 km square
     "sam":               CHANNEL,
     "cm1":               CHANNEL,
     "ukmo_casim":        CHANNEL,
@@ -87,7 +89,7 @@ HOSTS = {
     # Appended rather than grouped with twpice: the seed is derived from
     # position in this dict, so inserting higher up would silently
     # re-randomize every run below it.
-    "gate":              (1024, 1024, 200.0, 2),   # as twpice
+    "gate":              (1024, 1024, 200.0, 1),   # as twpice
 }
 
 SETS = {  # set tag -> c, the flux noise amplitude (steam.simulate.FLUX_SCALE)

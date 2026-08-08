@@ -66,11 +66,17 @@ def out_path(pattern):
 
 
 def load_tau(pattern):
-    """Load the stored column optical depth and pixel size from each file."""
+    """Load the stored column optical depth and pixel size from each file.
+
+    The grid and the outer scale are cross-checked across the matched files.
+    Every member goes into one regression, so a member generated under a
+    different domain spec does not average away -- it moves the fit, without
+    anything in the output saying so.
+    """
     paths = sorted(RUNS.glob(pattern))
     if not paths:
         raise SystemExit(f"no files in {RUNS} match {pattern!r}")
-    taus, dx_km = [], None
+    taus, dx_km, first = [], None, None
     for path in paths:
         with netCDF4.Dataset(path) as ds:
             ds.set_auto_mask(False)
@@ -82,13 +88,18 @@ def load_tau(pattern):
                     f"{path.name} has no parent tau -- it predates the "
                     f"optical-depth step in run_steam_simulations.py")
             tau = parent.variables["tau"][:]
-            dx = float(parent.getncattr("dx")) / 1000.0    # m -> km
-        if dx_km is None:
-            dx_km = dx
-        elif abs(dx - dx_km) > 1e-9:
-            raise SystemExit(
-                f"{path.name} has dx = {dx} km but the first file has "
-                f"{dx_km} km; pool only runs on a common grid")
+            spec = {a: float(parent.getncattr(a)) if a in parent.ncattrs()
+                    else float(getattr(ds, a)) for a in ("dx", "outer_scale")}
+        if first is None:
+            first, dx_km = spec, spec["dx"] / 1000.0      # m -> km
+        else:
+            off = [a for a, v in spec.items() if abs(v - first[a]) > 1e-9]
+            if off:
+                raise SystemExit(
+                    f"{path.name} has "
+                    + ", ".join(f"{a} = {spec[a]:g} m against the first "
+                                f"file's {first[a]:g} m" for a in off)
+                    + "; pool only runs on a common domain spec")
         taus.append(tau)
         print(f"  {path.name}: {tau.shape}", flush=True)
     return taus, dx_km, [p.name for p in paths]

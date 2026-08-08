@@ -8,13 +8,16 @@ from -- for the host itself and for both STEAM runs driven by its profile.
 Everything lands in rcemip_stats.npz keyed by host.
 
 MATCHING is the standing rule, from common.py. Horizontally the hosts are
-block-averaged 2x2, 3 km -> 6 km, which is STEAM's spacing. Vertically the
-hosts are on the stretched RCEMIP grid -- 75 m at the surface, ~270 m by
-1 km, then 500 m through the free troposphere (250 m for the three UKMO runs
-on their 98-level grid) -- against STEAM's uniform 257 m. So the rule points
-both ways here: near the surface the host is the finer field and gets
-averaged, aloft STEAM is finer and gets averaged, and around 1 km and for
-UKMO throughout the two already agree and neither moves.
+block-averaged onto STEAM's spacing -- 2x2, 3 km -> 6 km as the runs
+currently stand, the factor taken from each run's own dx attribute rather
+than written down here.
+
+Vertically the hosts are on the stretched RCEMIP grid -- 75 m at the surface,
+~270 m by 1 km, then 500 m through the free troposphere (250 m for the three
+UKMO runs on their 98-level grid) -- against STEAM's uniform 257 m. So the
+rule points both ways here: near the surface the host is the finer field and
+gets averaged, aloft STEAM is finer and gets averaged, and around 1 km and
+for UKMO throughout the two already agree and neither moves.
 
 Host fields come from the make_input_profiles.py adapters, so the
 conventions match the profiles that drove the runs: mixing ratios rather
@@ -45,7 +48,8 @@ from steam.constants import (
     gravity as g,
 )
 
-from common import VARS, coarsen_xy, match_factors, reduce_source
+from common import (VARS, coarsen_factor, coarsen_xy, match_factors,
+                    reduce_source)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -61,43 +65,47 @@ from make_input_profiles import ADAPTERS                   # noqa: E402
 HOSTS = ("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
          "scale", "ucla", "icon_lem", "icon_nwp")
 SETS = ("c005", "c017")
-XY_COARSEN = 2                 # host 3 km -> 6 km
+HOST_DX = 3000.0               # RCE_large300, by protocol
 SNAPSHOTS = (0, 1, 2)
 
 
-def host_fields(host, snapshot):
-    """Host h, qt, qc, qi on the 6 km grid at one snapshot, and its z."""
+def host_fields(host, snapshot, xy_coarsen):
+    """Host h, qt, qc, qi on STEAM's grid at one snapshot, and its z."""
     z, T, qv, qc, qi, _ = ADAPTERS[host](snapshot)
     z = np.asarray(z, dtype=np.float64)
     h = cp * T.astype(np.float64) + g * z[:, None, None] + Lv * qv
     qt = qv + qc + qi
     fields = {"h": h, "qt": qt, "qc": qc, "qi": qi}
-    coarse = {k: coarsen_xy(v, XY_COARSEN) for k, v in fields.items()}
+    coarse = {k: coarsen_xy(v, xy_coarsen) for k, v in fields.items()}
     print(f"  {host} host {T.shape} -> {coarse['h'].shape}", flush=True)
     # z last, to match STEAM's layout for the level reductions.
     return z, {k: np.moveaxis(v, 0, -1) for k, v in coarse.items()}
 
 
 def steam_fields(host, set_tag):
-    """STEAM h, qt, qc, qi, each (nx, ny, nz), and its z axis."""
+    """STEAM h, qt, qc, qi each (nx, ny, nz), its z axis, and the run's dx."""
     ds = netCDF4.Dataset(RUNS / f"{host}_{set_tag}.nc")
     ds.set_auto_mask(False)
     z = ds.variables["z"][:].astype(np.float64)
     fields = {v: ds.variables[v][:] for v in VARS}
     fields["h"] = fields["h"].astype(np.float64)
+    dx = float(ds.dx)
     ds.close()
-    return z, fields
+    return z, fields, dx
 
 
 def do_host(host, out):
-    z_steam, steam_f = steam_fields(host, SETS[0])
+    z_steam, steam_f, steam_dx = steam_fields(host, SETS[0])
+    xy_coarsen = coarsen_factor(steam_dx, HOST_DX)
+    out[f"dx_{host}"] = steam_dx
+    out[f"xy_coarsen_{host}"] = xy_coarsen
 
     # Host side: one snapshot in memory at a time; statistics averaged over
     # snapshots, PDF slices pooled (stacked -- the histograms flatten them).
     std_sum, cf_sum, pooled = None, None, {}
     z_levels = n_steam = n_host = None
     for snap in SNAPSHOTS:
-        z_host, host_f = host_fields(host, snap)
+        z_host, host_f = host_fields(host, snap, xy_coarsen)
         if z_levels is None:
             z_levels = z_host[z_host <= z_steam[-1]]
             n_steam, n_host = match_factors(z_levels, z_steam)
@@ -123,7 +131,7 @@ def do_host(host, out):
 
     for tag in SETS:
         z_s, fields = (z_steam, steam_f) if tag == SETS[0] \
-            else steam_fields(host, tag)
+            else steam_fields(host, tag)[:2]
         std, cf, slices = reduce_source(z_s, fields, z_levels, n_steam)
         for v in VARS:
             out[f"std_{v}_{host}_{tag}"] = std[v]
@@ -132,6 +140,7 @@ def do_host(host, out):
             out[f"pdf_{k}_{host}_{tag}"] = a
 
     print(f"  {host}: {z_levels.size} levels to {z_levels[-1]:.0f} m, "
+          f"host {xy_coarsen}x{xy_coarsen} coarsened to {steam_dx:.0f} m, "
           f"STEAM coarsened by {sorted(set(n_steam.tolist()))}, "
           f"host by {sorted(set(n_host.tolist()))}", flush=True)
 
