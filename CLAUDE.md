@@ -105,6 +105,16 @@ cascade with a 384 km one into one band would hide the distinction the axis
 exists to show. `plot_rcemip.members()` refuses any STEAM tag it has no
 grouping for, and refuses a figure handed more than one outer scale.
 
+The RCEMIP profile, PDF and scaling figures all draw two envelopes — the
+min-to-max across hosts and across STEAM runs — rather than one line per
+run, pooling the flux amplitudes into the STEAM band and never the outer
+scale. The twpice figures keep one line per run: two LES cases are not a
+population. Profiles carry a bar beside each panel, green where the two
+envelopes overlap and red where they are non-overlapping. The scaling
+bands take no interpolation — within a band every run shares dx and
+domain, so the lag axes are identical and the min/max is pointwise, which
+`curves()` checks rather than assumes.
+
 Two resolution conventions, deliberately different:
 
 - **Profiles and PDFs** (`compute_{twpice,rcemip}_stats.py`) are matched. The
