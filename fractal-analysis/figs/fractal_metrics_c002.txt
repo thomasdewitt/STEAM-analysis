@@ -1,0 +1,7 @@
+STEAM square campaign, 10 members pooled at dx = 1 km
+pattern sq1km_c002*.nc, objscale 2.2.0
+
+mask     cover        D_e        D_f   tau_area    tau_per
+R>0.1   0.5056      1.605      1.270      0.672      1.101
+R>0.2   0.4736      1.595      1.270      0.657      1.038
+R>0.3   0.4435      1.586      1.245      0.641      1.021

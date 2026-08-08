@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Plot the four fractal metrics written by compute_fractal_metrics.py.
 
-One four-panel figure, one panel per metric, each showing the scaling
-function the exponent was fitted to alongside the fitted value:
+One four-panel figure per flux amplitude -- fractal_metrics_c002,
+fractal_metrics_c005, fractal_metrics_c017 -- one panel per metric, each
+showing the scaling function the exponent was fitted to alongside the
+fitted value:
 
   a  correlation integral C(r)         -> D_e
   b  individual perimeter vs. size     -> D_f
@@ -31,9 +33,12 @@ Styling follows paper/concept-figs (turblib.py): the same ink, rule and
 label greys, the same earth-adjacent palette, hairline axes, no top or
 right spine, PDF out.
 
-Usage: python plot_fractal_metrics.py
+Usage: python plot_fractal_metrics.py [SET ...]
+  no args    -> every set with a cached fractal_metrics_<set>.npz
+  c017       -> that set alone
 """
 
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -48,8 +53,11 @@ HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # fractal-analysis/
 OUTPUT = BASE / "output"
 FIGS = BASE / "figs"
-DATA = OUTPUT / "fractal_metrics_C1large.npz"
-OUT = FIGS / "fractal_metrics_C1large"
+# One figure per flux amplitude, named for the set tag. Which sets exist is
+# read off output/ rather than listed, so a campaign added in
+# run_steam_simulations.py needs nothing changed here -- but only sets whose
+# metrics have actually been computed are drawn.
+SETS = ("c002", "c005", "c017")
 
 # paper/concept-figs/turblib.py
 INK = "#111111"
@@ -189,11 +197,11 @@ def write_table(path, header, rows, d, metrics):
     print(f"wrote {Path(path).name}")
 
 
-def main():
-    if not DATA.exists():
-        raise SystemExit(f"{DATA.name} not found -- run "
-                         f"compute_fractal_metrics.py first")
-    d = np.load(DATA, allow_pickle=False)
+def draw_set(set_tag):
+    """The four-panel figure and its table for one flux amplitude."""
+    data = OUTPUT / f"fractal_metrics_{set_tag}.npz"
+    out = FIGS / f"fractal_metrics_{set_tag}"
+    d = np.load(data, allow_pickle=False)
     thresholds = [float(R) for R in d["thresholds"]]
 
     fig, axes = plt.subplots(2, 2, figsize=(7.6, 6.2))
@@ -211,15 +219,30 @@ def main():
               f"pattern {str(d['pattern'])}, objscale "
               f"{str(d['objscale_version'])}")
     rows = [(f"R>{R:g}", threshold_tag(R)) for R in thresholds]
-    write_table(f"{OUT}.txt", header, rows, d, ("D_e", "D_f", "tau_area",
+    write_table(f"{out}.txt", header, rows, d, ("D_e", "D_f", "tau_area",
                                                 "tau_per"))
 
     fig.tight_layout()
-    fig.savefig(f"{OUT}.pdf", bbox_inches="tight", pad_inches=0.05)
-    fig.savefig(f"{OUT}.png", dpi=200, bbox_inches="tight", pad_inches=0.05,
+    fig.savefig(f"{out}.pdf", bbox_inches="tight", pad_inches=0.05)
+    fig.savefig(f"{out}.png", dpi=200, bbox_inches="tight", pad_inches=0.05,
                 facecolor="white")
     plt.close(fig)
-    print(f"wrote {OUT.name}.pdf and {OUT.name}.png")
+    print(f"wrote {out.name}.pdf and {out.name}.png")
+
+
+def main():
+    tags = sys.argv[1:] or [s for s in SETS
+                            if (OUTPUT / f"fractal_metrics_{s}.npz").exists()]
+    if not tags:
+        raise SystemExit("no fractal_metrics_<set>.npz in output/ -- run "
+                         "compute_fractal_metrics.py first")
+    for set_tag in tags:
+        data = OUTPUT / f"fractal_metrics_{set_tag}.npz"
+        if not data.exists():
+            raise SystemExit(f"{data.name} not found -- run "
+                             f"compute_fractal_metrics.py 'sq1km_{set_tag}*"
+                             f".nc' first")
+        draw_set(set_tag)
 
 
 if __name__ == "__main__":

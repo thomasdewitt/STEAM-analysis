@@ -92,7 +92,7 @@ def run_nest(out_nc):
     t0 = time.perf_counter()
     refine(str(out_nc), parent_group="/", output_group=NEST_GROUP,
            device=DEVICE, compress=True, **NEST)
-    compute_diagnostics(str(out_nc), group=NEST_GROUP, compress=True)
+    compute_diagnostics(str(out_nc), group=NEST_GROUP, compress=True, device=DEVICE)
     print(f"  nest done in {time.perf_counter() - t0:.0f} s", flush=True)
 
 
@@ -137,7 +137,7 @@ def run_parent(set_tag, out_nc):
         device=DEVICE,
         save_for_refinement=True,
     )
-    compute_diagnostics(str(out_nc), compress=True)
+    compute_diagnostics(str(out_nc), compress=True, device=DEVICE)
     print(f"{out_nc.name} parent done in {time.perf_counter() - t0:.0f} s "
           f"({out_nc.stat().st_size / 1e9:.1f} GB)", flush=True)
 

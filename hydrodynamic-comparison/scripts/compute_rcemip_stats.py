@@ -4,8 +4,21 @@ but across the nine hosts.
 
 For each RCE_large300 channel host: per-level standard deviations of h, qt,
 qc and qi, cloud fraction, and the single-level fields the PDFs are drawn
-from -- for the host itself and for both STEAM runs driven by its profile.
-Everything lands in rcemip_stats.npz keyed by host.
+from -- for the host itself and for all six STEAM runs driven by its
+profile. Everything lands in rcemip_stats.npz keyed by host.
+
+SIX STEAM runs per host, not two (2026-08-08): three flux amplitudes
+crossed with two outer scales, L set to the channel's long axis (6144 km)
+or its short one (384 km). STEAM keys carry both tags,
+`..._<set>_<lscale>`.
+
+The host keys do NOT carry an outer-scale tag, and the host side is reduced
+once rather than per outer scale. Nothing about the host depends on L, and
+nothing about the matching does either: STEAM's dz follows k_z(2 dx), a
+function of the finest class, so both outer scales land on the same 78
+levels and produce the same z_levels and the same coarsening factors. That
+is asserted against the runs rather than assumed -- an L case whose z axis
+disagrees is refused, not silently matched on the first one's grid.
 
 MATCHING is the standing rule, from common.py. Horizontally the hosts are
 block-averaged onto STEAM's spacing -- 2x2, 3 km -> 6 km as the runs
@@ -64,7 +77,8 @@ from make_input_profiles import ADAPTERS                   # noqa: E402
 
 HOSTS = ("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
          "scale", "ucla", "icon_lem", "icon_nwp")
-SETS = ("c005", "c017")
+SETS = ("c005", "c017", "c002")
+LSCALES = ("Llong", "Lshort")
 HOST_DX = 3000.0               # RCE_large300, by protocol
 SNAPSHOTS = (0, 1, 2)
 
@@ -82,20 +96,26 @@ def host_fields(host, snapshot, xy_coarsen):
     return z, {k: np.moveaxis(v, 0, -1) for k, v in coarse.items()}
 
 
-def steam_fields(host, set_tag):
-    """STEAM h, qt, qc, qi each (nx, ny, nz), its z axis, and the run's dx."""
-    ds = netCDF4.Dataset(RUNS / f"{host}_{set_tag}.nc")
+def steam_fields(host, set_tag, lscale):
+    """STEAM h, qt, qc, qi each (nx, ny, nz), its z axis, dx, and realized L.
+
+    dx and outer_scale are read off the run rather than written down here,
+    so a run regenerated on a different geometry is described by the geometry
+    it actually has.
+    """
+    ds = netCDF4.Dataset(RUNS / f"{host}_{set_tag}_{lscale}.nc")
     ds.set_auto_mask(False)
     z = ds.variables["z"][:].astype(np.float64)
     fields = {v: ds.variables[v][:] for v in VARS}
     fields["h"] = fields["h"].astype(np.float64)
     dx = float(ds.dx)
+    outer_scale = float(ds.outer_scale)
     ds.close()
-    return z, fields, dx
+    return z, fields, dx, outer_scale
 
 
 def do_host(host, out):
-    z_steam, steam_f, steam_dx = steam_fields(host, SETS[0])
+    z_steam, steam_f, steam_dx, L0 = steam_fields(host, SETS[0], LSCALES[0])
     xy_coarsen = coarsen_factor(steam_dx, HOST_DX)
     out[f"dx_{host}"] = steam_dx
     out[f"xy_coarsen_{host}"] = xy_coarsen
@@ -129,15 +149,29 @@ def do_host(host, out):
     for k, arrs in pooled.items():
         out[f"pdf_{k}_{host}_host"] = np.stack(arrs)
 
-    for tag in SETS:
-        z_s, fields = (z_steam, steam_f) if tag == SETS[0] \
-            else steam_fields(host, tag)[:2]
-        std, cf, slices = reduce_source(z_s, fields, z_levels, n_steam)
-        for v in VARS:
-            out[f"std_{v}_{host}_{tag}"] = std[v]
-        out[f"cf_{host}_{tag}"] = cf
-        for k, a in slices.items():
-            out[f"pdf_{k}_{host}_{tag}"] = a
+    for lscale in LSCALES:
+        for tag in SETS:
+            if (lscale, tag) == (LSCALES[0], SETS[0]):
+                z_s, fields, L = z_steam, steam_f, L0
+            else:
+                z_s, fields, _, L = steam_fields(host, tag, lscale)
+                # The whole matching -- z_levels and both sets of coarsening
+                # factors -- was derived from the first run's z axis. Reusing
+                # it for a run on a different vertical grid would quietly
+                # compare two things measured at different heights.
+                if z_s.shape != z_steam.shape or \
+                        not np.allclose(z_s, z_steam, rtol=0, atol=1e-6):
+                    raise SystemExit(
+                        f"{host} {tag} {lscale}: STEAM z axis differs from "
+                        f"{SETS[0]} {LSCALES[0]}; these runs cannot share "
+                        f"one set of matching factors")
+            out[f"L_{lscale}"] = L
+            std, cf, slices = reduce_source(z_s, fields, z_levels, n_steam)
+            for v in VARS:
+                out[f"std_{v}_{host}_{tag}_{lscale}"] = std[v]
+            out[f"cf_{host}_{tag}_{lscale}"] = cf
+            for k, a in slices.items():
+                out[f"pdf_{k}_{host}_{tag}_{lscale}"] = a
 
     print(f"  {host}: {z_levels.size} levels to {z_levels[-1]:.0f} m, "
           f"host {xy_coarsen}x{xy_coarsen} coarsened to {steam_dx:.0f} m, "
@@ -151,7 +185,8 @@ def main():
         if host not in HOSTS:
             raise SystemExit(f"unknown host {host!r} (have {list(HOSTS)})")
 
-    out = {"hosts": np.array(hosts), "sets": np.array(SETS)}
+    out = {"hosts": np.array(hosts), "sets": np.array(SETS),
+           "lscales": np.array(LSCALES)}
     for host in hosts:
         do_host(host, out)
 

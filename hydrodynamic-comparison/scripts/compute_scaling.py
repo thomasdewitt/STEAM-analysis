@@ -4,7 +4,16 @@ resolution, for both comparison cases.
 
 For each host, each of h and qt, and each of 5 and 10 km: the order-1 Haar
 fluctuation along the long horizontal axis of a single level, for the host
-and for both STEAM runs driven by its profile. Writes scaling_stats.npz.
+and for every STEAM run driven by its profile. Writes scaling_stats.npz.
+
+STEAM sources are tagged `<set>_<lscale>`: three flux amplitudes crossed
+with the outer scales that are distinct for the case. The channels have two
+-- L at the long axis (6144 km) or the short one (384 km) -- so six runs
+per host; TWPICE and GATE are square, so the two coincide and they have
+three. This is the axis the scaling functions show most directly: a
+short-L run's cascade is five dyads deep against the long-L run's nine, so
+its fluctuation function has no variance left to accumulate past 384 km
+while the long-L one keeps climbing to the domain scale.
 
 NATIVE RESOLUTION, deliberately, and unlike the profile and PDF figures:
 nothing is coarsened on either side. The host and STEAM curves therefore
@@ -64,7 +73,7 @@ OUT = OUTPUT / "scaling_stats.npz"
 sys.path.insert(0, str(REPO))
 from make_input_profiles import ADAPTERS, read_var          # noqa: E402
 
-SETS = ("c005", "c017")
+SETS = ("c005", "c017", "c002")
 VARS = ("h", "qt")
 LEVELS = (5000.0, 10000.0)
 SNAPSHOT = "0000003450"
@@ -72,13 +81,15 @@ HALF_DECADE = 0.25          # +/- this many dex about each lag
 
 GATE_FILE = "GATE_IDEAL_S_2048x2048x256_100m_2s_2048_0000041400.nc"   # 23 h
 
-# case -> (hosts, host dx [m]). STEAM's dx is not listed: it is read from each
-# run's own `dx` attribute, so changing a domain in run_steam_simulations.py
-# does not leave a stale number here.
+# case -> (hosts, host dx [m], outer-scale cases). STEAM's dx and its realized
+# L are not listed: both are read from each run's own attributes, so changing
+# a domain in run_steam_simulations.py does not leave a stale number here.
+# The square SAM domains have one outer-scale case, the channels two.
 CASES = {
-    "twpice": (("twpice", "gate"), 100.0),
+    "twpice": (("twpice", "gate"), 100.0, ("Llong",)),
     "rcemip": (("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
-                "scale", "ucla", "icon_lem", "icon_nwp"), 3000.0),
+                "scale", "ucla", "icon_lem", "icon_nwp"), 3000.0,
+               ("Llong", "Lshort")),
 }
 
 si.set_numerical_precision("float64")
@@ -171,33 +182,50 @@ def host_levels(host, z_target):
     return per_snapshot, z_used
 
 
-def steam_level(host, set_tag, z_target):
+def steam_level(host, set_tag, lscale, z_target):
     """STEAM h and qt at the level nearest z_target, with the run's own dx.
 
-    dx comes from the file rather than from a table here, so a run regenerated
-    on a different domain is measured on the grid it actually has.
+    dx and the realized outer scale come from the file rather than from a
+    table here, so a run regenerated on a different domain is measured on the
+    grid it actually has.
     """
-    with netCDF4.Dataset(RUNS / f"{host}_{set_tag}.nc") as ds:
+    with netCDF4.Dataset(RUNS / f"{host}_{set_tag}_{lscale}.nc") as ds:
         ds.set_auto_mask(False)
         z = ds.variables["z"][:].astype(np.float64)
         k = int(np.argmin(np.abs(z - z_target)))
         fields = {v: np.asarray(ds.variables[v][:, :, k], np.float64)
                   for v in VARS}
         dx = float(ds.dx)
-    return fields, float(z[k]), dx
+        outer_scale = float(ds.outer_scale)
+    return fields, float(z[k]), dx, outer_scale
 
 
 def do_case(case, out):
-    hosts, host_dx = CASES[case]
+    hosts, host_dx, lscales = CASES[case]
     out[f"{case}_hosts"] = np.array(hosts)
+    out[f"{case}_lscales"] = np.array(lscales)
     for host in hosts:
         for z_target in LEVELS:
             tag = f"{z_target / 1000:.0f}km"
             fields_list, z_host = host_levels(host, z_target)
             sources = [("host", fields_list, z_host, host_dx)]
-            for s in SETS:
-                fields, z_steam, steam_dx = steam_level(host, s, z_target)
-                sources.append((s, [fields], z_steam, steam_dx))
+            for lscale in lscales:
+                for s in SETS:
+                    fields, z_steam, steam_dx, L = steam_level(
+                        host, s, lscale, z_target)
+                    # Keyed by case, not by lscale alone: `Llong` means
+                    # 6144 km for a channel and 204.8 km for a square SAM
+                    # domain, so a single L_<lscale> would be whichever case
+                    # ran last. Within a case every host shares the geometry.
+                    key = f"{case}_L_{lscale}"
+                    if key in out and abs(out[key] - L) > 1e-6:
+                        raise SystemExit(
+                            f"{case} {host} {s} {lscale}: outer scale {L} m "
+                            f"disagrees with {out[key]} m from an earlier "
+                            f"host; this case is not one geometry")
+                    out[key] = L
+                    sources.append((f"{s}_{lscale}", [fields], z_steam,
+                                    steam_dx))
             for name, fields_list, z_used, dx in sources:
                 for v in VARS:
                     # Mean of the per-snapshot F_1: at order 1 with equal

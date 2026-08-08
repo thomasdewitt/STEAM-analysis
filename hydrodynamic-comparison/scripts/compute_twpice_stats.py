@@ -74,7 +74,11 @@ sys.path.insert(0, str(REPO))
 from make_input_profiles import (_twpice_field, read_var,   # noqa: E402
                                  liquid_fraction)
 
-SETS = ("c005", "c017")
+SETS = ("c005", "c017", "c002")
+# TWPICE and GATE are square, so the outer-scale axis added on 2026-08-08 has
+# a single case on this side: L is the domain extent either way. The tag is
+# still in the filename, because the runs directory follows one naming rule.
+LSCALE = "Llong"
 CASES = ("twpice", "gate")
 HOST_DX = 100.0                # both SAM cases, native
 SNAPSHOT = "0000003450"
@@ -151,7 +155,7 @@ def steam_fields(case, set_tag):
     h is cast to float64 on read for the same reason as MSE above; the mixing
     ratios are O(1e-2) and stay float32, which halves what has to be held.
     """
-    ds = netCDF4.Dataset(RUNS / f"{case}_{set_tag}.nc")
+    ds = netCDF4.Dataset(RUNS / f"{case}_{set_tag}_{LSCALE}.nc")
     ds.set_auto_mask(False)
     z = ds.variables["z"][:].astype(np.float64)
     fields = {v: ds.variables[v][:] for v in VARS}
@@ -179,7 +183,7 @@ def do_case(case, out):
     # factors, so read the grids before loading anything large. Sources are
     # then loaded, reduced and freed one at a time -- holding a host and both
     # STEAM sets at once would be ~40 GB.
-    with netCDF4.Dataset(RUNS / f"{case}_{SETS[0]}.nc") as ds:
+    with netCDF4.Dataset(RUNS / f"{case}_{SETS[0]}_{LSCALE}.nc") as ds:
         z_steam0 = ds.variables["z"][:].astype(np.float64)
         steam_dx = float(ds.dx)
     xy_coarsen = coarsen_factor(steam_dx, HOST_DX)

@@ -27,9 +27,12 @@ UNITS = {
 INK = "#111111"
 RULE = "#e3e3e3"
 LABEL = "#7a7a7a"
-# The hosts are the reference and take the ink; the two STEAM amplitudes take
-# the teal/sienna pair.
-COLOR = {"host": INK, "c005": "#1F6E6B", "c017": "#B5502A"}
+# The hosts are the reference and take the ink; the STEAM amplitudes take
+# three of turblib's palette entries -- ochre, deep teal, sienna. Ochre for
+# c002 rather than the palette's slate blue: on the scaling figures the host
+# lines are thin ink, and slate read as a washed-out black beside them.
+COLOR = {"host": INK, "c002": "#C08A2D", "c005": "#1F6E6B",
+         "c017": "#B5502A"}
 
 
 def rcparams():

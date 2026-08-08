@@ -46,7 +46,7 @@ from albedo import ALBEDO_THRESHOLDS, tau_for_albedo, threshold_tag
 # Which files in runs/square/ to read and pool into one ensemble. Override
 # on the command line to do another set; the output is named after it, so
 # the sets do not overwrite each other.
-PATTERN = "sq1km_C1large*.nc"
+PATTERN = "sq1km_c017*.nc"
 
 # Correlation-integral sampling: thinned 10x for the pooled square
 # campaign, where ten members already oversample the domain.

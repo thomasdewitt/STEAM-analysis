@@ -46,7 +46,18 @@ Run in order:
    `PATTERN`, pooled into one ensemble ->
    `fractal-analysis/output/fractal_metrics_<set>.npz`.
 4. `fractal-analysis/scripts/plot_fractal_metrics.py` — the four scaling
-   functions.
+   functions, one figure per set.
+
+**Flux amplitudes (2026-08-08).** One naming convention across all three
+campaigns: the set tag is `c` followed by c x 100 zero-padded to three
+digits, so `c002` = 0.02, `c005` = 0.05, `c017` = 0.17. The square
+campaign's `C1small`/`C1large` were renamed to `c005`/`c017` — the
+amplitudes did not move, so the existing keepers still match
+`campaign_spec`, and that campaign's member seed never depended on the tag.
+`c002` was added to all three. Renaming a set tag in
+`hydrodynamic-comparison/` or `small-domain/` is not free the same way:
+their seeds are derived from position in the `SETS` dict, so new tags go on
+the end.
 
 Each campaign subfolder lays out the same way: `scripts/` for code, `output/`
 for cached statistics, `figs/` for figures and the text tables beside them.
@@ -69,8 +80,30 @@ only the combined condensate `QN`, so the liquid/ice split uses SAM's linear
 ramp — all liquid at 0 C, all ice at -38 C — applied at native resolution,
 before coarsening, since it does not commute with the average.
 `scripts/run_steam_simulations.py` runs one STEAM simulation per host per
-flux amplitude, on the host's domain at twice its horizontal spacing; then a compute/plot pair per
-figure, with `common.py` holding the matching rule and the styling.
+flux amplitude per outer scale, on the host's domain at twice its horizontal
+spacing; then a compute/plot pair per figure, with `common.py` holding the
+matching rule and the styling. Runs are `runs/hydro/<host>_<set>_<L>.nc`.
+
+**Outer scale (2026-08-08).** The second axis, and what doubles the channel
+comparison. `Llong` sets L to the longest horizontal extent, `Lshort` to the
+shortest — 6144 km and 384 km for the channels. `simulate` wants each extent
+to be an integer multiple of L or smaller than it: at `Llong` the long axis
+is one tile and the short axis a folded strip, at `Lshort` the long axis is
+exactly 16 tiles and neither is a strip. The class ladder is what changes,
+L/2dx falling from 512 to 32 — nine dyads of cascade against five. The
+vertical grid does not move, because dz follows k_z(2 dx) and the finest
+class is the same either way; both cases land on the same 78 levels, which
+is what lets the host side be reduced once and asserted against, not
+recomputed per L. TWPICE and GATE are square, so their two cases coincide
+and they run `Llong` alone.
+
+Figures split on the outer scale rather than pooling it: `rcemip_profiles_
+<L>`, `rcemip_pdfs_<L>`, `rcemip_scaling_<L>`. Flux amplitude is pooled into
+the single STEAM envelope on the profile and PDF figures and is a colour on
+the line figures; the outer scale is neither, because merging a 6144 km
+cascade with a 384 km one into one band would hide the distinction the axis
+exists to show. `plot_rcemip.members()` refuses any STEAM tag it has no
+grouping for, and refuses a figure handed more than one outer scale.
 
 Two resolution conventions, deliberately different:
 

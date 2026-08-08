@@ -112,8 +112,14 @@ PROFILES = REPO / "runs" / "input_profiles"
 PROFILE_HOST = "ukmo_ra1t"
 
 SETS = {  # set tag -> c, the flux noise amplitude (steam.simulate.FLUX_SCALE)
-    "C1small": 0.05,
-    "C1large": 0.17,
+    # Tagged by c, as in small-domain/ and hydrodynamic-comparison/: the tag
+    # is c x 100 zero-padded to three digits. Renamed from C1small/C1large on
+    # 2026-08-08 so one convention names the amplitude everywhere; the
+    # amplitudes did not move, so the existing keepers still match
+    # campaign_spec, and the member seed never depended on the tag.
+    "c005": 0.05,
+    "c017": 0.17,
+    "c002": 0.02,
 }
 N_MEMBERS = 10
 NX = 2048
@@ -248,7 +254,7 @@ def run_square(set_tag, member, out_nc):
         has_T = "T" in ds.variables
     check_shape("square", shape, NX, (SQUARE_NZ, SQUARE_NZ))
     if not has_T:
-        compute_diagnostics(str(out_nc), compress=True)
+        compute_diagnostics(str(out_nc), compress=True, device=DEVICE)
         print(f"square {set_tag} m{member:02d} diagnostics done", flush=True)
 
 
@@ -274,7 +280,7 @@ def run_nest(out_nc, which, spec_kwargs, group, parent_group, expect_xy,
         print(f"nest {which} exists, skipping", flush=True)
     check_shape(f"nest {which}", shape, expect_xy, z_range)
     if not has_T:
-        compute_diagnostics(str(out_nc), group=group, compress=True)
+        compute_diagnostics(str(out_nc), group=group, compress=True, device=DEVICE)
         print(f"nest {which} diagnostics done", flush=True)
 
 

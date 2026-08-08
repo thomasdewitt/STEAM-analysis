@@ -49,7 +49,7 @@ OUTPUT = BASE / "output"
 FIGS = BASE / "figs"
 DATA = OUTPUT / "twpice_stats.npz"
 
-NAME = {"host": "LES host",
+NAME = {"host": "LES host", "c002": "STEAM  $c=0.02$",
         "c005": "STEAM  $c=0.05$", "c017": "STEAM  $c=0.17$"}
 CASE_NAME = {"twpice": "SAM-TWPICE", "gate": "SAM-GATE"}
 CASE_STYLE = {"twpice": "-", "gate": (0, (4, 2))}
