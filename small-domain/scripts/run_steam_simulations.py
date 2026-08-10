@@ -95,16 +95,41 @@ SEED = 7002
 
 RUN_NEST = True
 
-# Centered nest: 2:1 aspect
-NEST_NX = 512
-NEST_DX = 5
-_NEST_PARENT_CELLS = int(NEST_NX * NEST_DX / DX) 
-NEST = dict(x_start=(NX - _NEST_PARENT_CELLS) ,
-            x_stop=(NX + _NEST_PARENT_CELLS),
-            y_start=(NY - _NEST_PARENT_CELLS) //2,
-            y_stop=(NY + _NEST_PARENT_CELLS) //2,
-            dx=NEST_DX, dy=NEST_DX)
+# The nest, in its OWN cells at its own spacing -- set these three and nothing
+# else. The parent-cell window refine() wants is derived and centered, so the
+# nest cannot be placed off the edge of the parent by hand.
+NEST_NX, NEST_NY = 512, 256        # nest cells, so 2:1 at NEST_DX below
+NEST_DX = 5.0                      # nest spacing [m]
 NEST_GROUP = "refinements/r0"
+
+
+def nest_window(parent_cells, nest_cells, axis):
+    """Centered parent-cell [start, stop) spanning nest_cells of the nest.
+
+    refine() cuts on parent cells, so a nest extent that is not a whole number
+    of them has no window to ask for; that and a nest wider than the parent are
+    both config errors rather than something to round into shape.
+    """
+    span = nest_cells * NEST_DX / DX
+    if abs(span - round(span)) > 1e-9:
+        raise SystemExit(
+            f"nest {axis} extent {nest_cells * NEST_DX:.4g} m "
+            f"({nest_cells} x {NEST_DX:g} m) is {span:g} parent cells at "
+            f"dx = {DX:g} m, not a whole number of them")
+    span = int(round(span))
+    if span > parent_cells:
+        raise SystemExit(
+            f"nest {axis} extent {nest_cells * NEST_DX:.4g} m is {span} "
+            f"parent cells, wider than the parent's {parent_cells}")
+    start = (parent_cells - span) // 2
+    return start, start + span
+
+
+NEST_X_START, NEST_X_STOP = nest_window(NX, NEST_NX, "x")
+NEST_Y_START, NEST_Y_STOP = nest_window(NY, NEST_NY, "y")
+NEST = dict(x_start=NEST_X_START, x_stop=NEST_X_STOP,
+            y_start=NEST_Y_START, y_stop=NEST_Y_STOP,
+            dx=NEST_DX, dy=NEST_DX)
 
 # What the keeper carries, as in fractal-analysis/. The aux names are copied
 # where present, so a group without one (p_bottom, on a nest that starts at the
@@ -165,10 +190,10 @@ def run_nest(out_nc):
             f"{out_nc.name} carries no refinement state, so it was written "
             f"with RUN_NEST = False. Delete it and rerun the parent rather "
             f"than reporting a nest this file cannot produce.")
-    print(f"  nest {NEST_NX} x {NEST_NX} at dx = {NEST_DX:.0f} m "
-          f"({NEST_NX * NEST_DX / 1000:.2f} km square), parent cells "
-          f"x {NEST['x_start']}:{NEST['x_stop']}, "
-          f"y {NEST['y_start']}:{NEST['y_stop']}", flush=True)
+    print(f"  nest {NEST_NX} x {NEST_NY} at dx = {NEST_DX:g} m "
+          f"({NEST_NX * NEST_DX / 1000:.2f} x {NEST_NY * NEST_DX / 1000:.2f} "
+          f"km), parent cells x {NEST_X_START}:{NEST_X_STOP}, "
+          f"y {NEST_Y_START}:{NEST_Y_STOP}", flush=True)
     t0 = time.perf_counter()
     refine(str(out_nc), parent_group="/", output_group=NEST_GROUP,
            device=DEVICE, compress=True, **NEST)
