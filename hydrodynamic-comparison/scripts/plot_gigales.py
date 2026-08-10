@@ -3,11 +3,22 @@
 
 Two figures:
 
-  gigales_profiles  per-level standard deviation of h, qt, qc and qi, plus
-                    cloud fraction, STEAM at three flux amplitudes against
-                    each host.
-  gigales_pdfs      single-level distributions of the same four variables at
-                    5 and 10 km.
+  gigales_profiles  per-level standard deviation of h, qt, T, p, qc and qi,
+                    plus cloud fraction, STEAM at three flux amplitudes
+                    against each host.
+  gigales_pdfs      single-level distributions of h, qt, qc and qi at 5 and
+                    10 km.
+
+T AND p JOINED THE PROFILE FIGURE ON 2026-08-10, drawn exactly like the four
+that were already there, and on the profiles only.
+
+NEITHER SAM CASE HAS A HOST PRESSURE to draw. Both archive a 1-D reference
+p(z), which has no horizontal variance, and a PP that is the anelastic
+dynamic pressure perturbation rather than the thermodynamic pressure STEAM
+computes. So the pressure panel carries the STEAM curves and the run
+envelope alone; the panel title says so, and no host line is faked to fill
+it. Which variables the host reported is read off the npz rather than
+written down here -- compute_gigales_stats.py is what looked.
 
 BOTH LAYERS OF THE ENSEMBLE ARE ON THE PROFILE FIGURE, and they say
 different things. Each coloured line is the POOLED statistic for one case
@@ -53,8 +64,8 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from common import (VARS, UNITS, INK, LABEL, COLOR, by_amplitude, rcparams,
-                    style)
+from common import (VARS, STD_VARS, UNITS, INK, LABEL, COLOR, by_amplitude,
+                    rcparams, style)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -111,12 +122,29 @@ def run_envelope(d, cases, sources, key, x_of):
     return z, stack.min(axis=0), stack.max(axis=0)
 
 
-def draw(ax, d, cases, sources, key, x_of):
+def has_host(d, case, v):
+    """Whether this case's host reported variable v.
+
+    Asked of the npz rather than decided here: compute_gigales_stats.py is
+    what opened the files and recorded what was in them.
+    """
+    return v in [str(x) for x in d[f"{case}_host_vars"]]
+
+
+def draw(ax, d, cases, sources, key, x_of, host_cases=None):
+    """The amplitude lines, the run envelope, and the host reference.
+
+    host_cases is which cases contribute a host line; None means all of
+    them. It is a list rather than a flag because the two SAM cases are not
+    guaranteed to lack the same variables, even though today they do.
+    """
+    if host_cases is None:
+        host_cases = cases
     z, lo, hi = run_envelope(d, cases, sources, key, x_of)
     ax.fill_betweenx(z / 1000.0, lo, hi, color=BAND, alpha=BAND_ALPHA, lw=0,
                      zorder=0)
     for s in order(sources):
-        for case in cases:
+        for case in (host_cases if s == "host" else cases):
             ax.plot(x_of(d[f"{key}_{case}_{s}"]), d[f"{case}_z"] / 1000.0,
                     color=COLOR[s], lw=1.3, ls=CASE_STYLE[case],
                     solid_capstyle="round", zorder=2)
@@ -134,28 +162,44 @@ def legend_handles(cases, sources, n_runs=None):
     return handles
 
 
+NCOL = 4                           # 6 std panels + cloud fraction + legend
+
+
 def profiles(d, cases, sources, n_runs):
-    fig, axes = plt.subplots(2, 3, figsize=(9.0, 6.0), sharey=True)
+    fig, axes = plt.subplots(2, NCOL, figsize=(11.6, 6.0), sharey=True)
     flat = axes.ravel()
+    panels = iter("abcdefg")
 
-    for ax, panel, v in zip(flat, "abcd", VARS):
+    for ax, v in zip(flat, STD_VARS):
         label, scale, unit = UNITS[v]
-        draw(ax, d, cases, sources, f"std_{v}", lambda a, s=scale: a * s)
-        style(ax, panel, f"std({label})  [{unit}]",
-              "height  [km]" if ax is flat[0] or ax is flat[3] else "")
+        host_cases = [c for c in cases if has_host(d, c, v)]
+        draw(ax, d, cases, sources, f"std_{v}", lambda a, s=scale: a * s,
+             host_cases)
+        # A panel with no host line has to say so on the panel: a reader
+        # scanning the row would otherwise take the absence for an overlap.
+        note = "" if len(host_cases) == len(cases) else "  (STEAM only)"
+        style(ax, next(panels), f"std({label})  [{unit}]{note}",
+              "height  [km]" if ax in (flat[0], flat[NCOL]) else "")
 
-    draw(flat[4], d, cases, sources, "cf", lambda a: a)
-    style(flat[4], "e", "cloud fraction", "")
-    flat[4].set_xlim(left=0)
+    cf_ax = flat[len(STD_VARS)]
+    draw(cf_ax, d, cases, sources, "cf", lambda a: a)
+    style(cf_ax, next(panels), "cloud fraction", "")
+    cf_ax.set_xlim(left=0)
 
-    flat[5].axis("off")
-    flat[5].legend(handles=legend_handles(cases, sources, n_runs),
-                   loc="center", handlelength=1.8,
-                   title=f"lines pooled over {int(d['n_members'])} "
-                         f"realizations")
+    used = len(STD_VARS) + 1
+    if used >= flat.size:
+        raise SystemExit(
+            f"{used} panels do not leave a slot for the legend in a "
+            f"2 x {NCOL} grid; widen the grid")
+    for ax in flat[used:]:
+        ax.axis("off")
+    flat[used].legend(handles=legend_handles(cases, sources, n_runs),
+                      loc="center", handlelength=1.8,
+                      title=f"lines pooled over {int(d['n_members'])} "
+                            f"realizations")
 
     top = max(d[f"{c}_z"].max() for c in cases) / 1000.0
-    for ax in flat[:5]:
+    for ax in flat[:used]:
         ax.set_ylim(0, top)
     fig.tight_layout()
     return fig
@@ -232,6 +276,11 @@ def main():
               f"by {n_steam.min()}-{n_steam.max()}, host by "
               f"{n_host.min()}-{n_host.max()}")
     print(f"cloud fraction threshold {float(d['cloud_kgkg']) * 1e3:g} g/kg")
+    for case in cases:
+        absent = [v for v in STD_VARS if not has_host(d, case, v)]
+        if absent:
+            print(f"{case}: no host {absent}; those panels carry the STEAM "
+                  f"curves and the run envelope alone")
 
     n_members = int(d["n_members"])
     n_runs = len(cases) * (len(sources) - 1) * n_members

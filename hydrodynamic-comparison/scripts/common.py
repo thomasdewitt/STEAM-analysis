@@ -11,7 +11,19 @@ mean what its caption said.
 import numpy as np
 import matplotlib.pyplot as plt
 
+# VARS is the set the PDFs are drawn from and the set cloud fraction is built
+# out of. STD_VARS is the set that gets a per-level standard deviation, and it
+# is the longer of the two: T and p were added on 2026-08-10 as two more
+# profile panels, computed exactly like the four already there, but they get
+# no PDF panel and nothing about them feeds the cloud mask.
+#
+# The extra two are STEAM's own diagnostics -- steam.thermodynamics writes T
+# and p beside qc and qi from the same column solve -- so on the STEAM side
+# they are read the same way as everything else. On the host side T is
+# archived by every host here; p is NOT (see make_input_profiles.PRESSURE),
+# and a host without it is dropped from that panel rather than filled in.
 VARS = ("h", "qt", "qc", "qi")
+STD_VARS = ("h", "qt", "T", "p", "qc", "qi")
 CLOUD_KGKG = 0.01e-3           # condensate for a cell to count as cloudy
 PDF_LEVELS = (5000.0, 10000.0)
 
@@ -19,6 +31,8 @@ PDF_LEVELS = (5000.0, 10000.0)
 UNITS = {
     "h":  (r"$h$",   1e-3, "kJ kg$^{-1}$"),
     "qt": (r"$q_t$", 1e3,  "g kg$^{-1}$"),
+    "T":  (r"$T$",   1.0,  "K"),
+    "p":  (r"$p$",   1e-2, "hPa"),
     "qc": (r"$q_c$", 1e3,  "g kg$^{-1}$"),
     "qi": (r"$q_i$", 1e3,  "g kg$^{-1}$"),
 }
@@ -166,22 +180,39 @@ def level_slice(field, z_axis, z_target, n):
     return field[..., i0:i0 + n].mean(axis=-1, dtype=np.float64)
 
 
+def std_vars(fields):
+    """Which STD_VARS this source actually carries, in STD_VARS order.
+
+    A source is allowed to be missing a variable, and exactly one is ever
+    missing in practice: the hosts that archive no 3-D pressure. Selecting on
+    presence rather than asserting the full set is what lets those hosts keep
+    their h, qt, T, qc and qi panels; the figure is then responsible for
+    saying which hosts are behind the pressure panel. Anything else absent is
+    a bug upstream and shows up as a missing key downstream, where the key
+    names the source and the variable.
+    """
+    return tuple(v for v in STD_VARS if v in fields)
+
+
 def level_planes(z_axis, fields, z_levels, factors):
     """Every comparison level as a 2-D plane: {var: (nlev, ny, nx)}.
 
     Keeping the planes rather than reducing them on the spot is what lets a
     caller with several snapshots hand the whole pooled sample to numpy in
     one call. The planes are small -- a coarsened RCEMIP host is ~64 x 992
-    per level, so all levels of all four variables for one snapshot come to
-    ~90 MB, against gigabytes for the field they were sliced from.
+    per level, so all levels of all six variables for one snapshot come to
+    ~135 MB, against gigabytes for the field they were sliced from.
     """
     return {v: np.stack([level_slice(fields[v], z_axis, z, n)
                          for z, n in zip(z_levels, factors)])
-            for v in VARS}
+            for v in std_vars(fields)}
 
 
 def reduce_source(z_axis, fields, z_levels, factors):
     """Per-level std and cloud fraction, plus the fields the PDFs use.
+
+    The std is taken over whichever of STD_VARS the source carries; cloud
+    fraction and the PDF slices come from VARS, which every source has.
 
     Cloud fraction is thresholded AFTER coarsening: the coarsened cell value
     is what the resolved field says is there.
@@ -191,10 +222,11 @@ def reduce_source(z_axis, fields, z_levels, factors):
     realizations are being combined, the wanted quantity is the statistic of
     the pooled sample: keep level_planes and reduce them together.
     """
-    std = {v: np.empty(z_levels.size) for v in VARS}
+    present = std_vars(fields)
+    std = {v: np.empty(z_levels.size) for v in present}
     cf = np.empty(z_levels.size)
     for j, (z, n) in enumerate(zip(z_levels, factors)):
-        for v in VARS:
+        for v in present:
             std[v][j] = level_slice(fields[v], z_axis, z, n).std()
         cond = (level_slice(fields["qc"], z_axis, z, n)
                 + level_slice(fields["qi"], z_axis, z, n))

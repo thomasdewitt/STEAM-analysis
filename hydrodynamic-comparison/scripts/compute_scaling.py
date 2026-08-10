@@ -142,10 +142,17 @@ def twpice_level(z_target):
     """TWPICE h and qt at one level, native 100 m, read level by level.
 
     A whole field is 4.3 GB and only two levels are wanted, so each variable
-    is sliced in the file. h is cp times the archived MSE. The MSE file's
-    horizontal axes are (x, y) and the mixing ratios' are (y, x); with a
-    square domain and a horizontally isotropic statistic that only sets which
-    of two equivalent directions the transform runs along.
+    is sliced in the file. h is cp times the archived MSE.
+
+    Every one of these files is (time, y, x, z), the MSE included -- its
+    dimensions are NAMED ('time', 'x', 'y', 'z') but its data is laid out
+    like the others, established pointwise against the archived TABS on
+    2026-08-10 (make_input_profiles._twpice_field). This function was always
+    right about it by doing nothing: the slices below are taken as stored, so
+    h runs along the same horizontal direction as qt. The remark that used to
+    sit here -- that the two were transposed relative to each other and it did
+    not matter on a square domain -- was wrong on the first half and moot on
+    the second.
     """
     z = np.asarray(read_var(TWPICE / f"TWPICE_LPT_3D_QV_{SNAPSHOT}.nc", "z"),
                    dtype=np.float64)

@@ -3,10 +3,21 @@
 
 Same two figures as the TWPICE side, across all nine hosts at once:
 
-  rcemip_profiles  per-level standard deviation of h, qt, qc and qi, plus
-                   cloud fraction
-  rcemip_pdfs      single-level distributions of the same four variables at
-                   5 and 10 km
+  rcemip_profiles  per-level standard deviation of h, qt, T, p, qc and qi,
+                   plus cloud fraction
+  rcemip_pdfs      single-level distributions of h, qt, qc and qi at 5 and
+                   10 km
+
+T AND p JOINED THE PROFILE FIGURE ON 2026-08-10, drawn exactly like the four
+that were already there. They are on the profiles only; the PDFs keep the
+original four.
+
+The pressure panel is over FEWER HOSTS than the rest, and both bands in it
+are restricted to the same reduced set: scale and ucla archive no 3-D
+pressure, so nine hosts become seven. Restricting only the host band would
+compare seven models' spread against twenty-seven STEAM runs driven by nine,
+which is not the comparison the panel claims. The panel is labelled with its
+own host count and the omission is printed at run time.
 
 ONE FIGURE PER OUTER SCALE (2026-08-08), so each stem carries the tag:
 rcemip_profiles_Llong, rcemip_profiles_Lshort, and likewise for the PDFs.
@@ -49,7 +60,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch, Rectangle
 from matplotlib.transforms import blended_transform_factory
 
-from common import (VARS, UNITS, INK, COLOR, STEAM_BAND, rcparams, style)
+from common import (VARS, STD_VARS, UNITS, INK, COLOR, STEAM_BAND, rcparams,
+                    style)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -203,26 +215,53 @@ def legend_handles(sources, names):
     return handles
 
 
+def var_hosts(d, hosts, v):
+    """The hosts behind one panel: everyone, except p's reduced set.
+
+    Read off the file rather than named here, because which hosts archive a
+    3-D pressure is a property of the datasets and the compute step is what
+    looked.
+    """
+    if v != "p":
+        return hosts
+    return [h for h in [str(x) for x in d["p_hosts"]] if h in hosts]
+
+
+NCOL = 4                           # 6 std panels + cloud fraction + legend
+
+
 def profiles(d, hosts, sources, names):
     z = common_z(d, hosts)
-    fig, axes = plt.subplots(2, 3, figsize=(9.0, 6.0), sharey=True)
+    fig, axes = plt.subplots(2, NCOL, figsize=(11.6, 6.0), sharey=True)
     flat = axes.ravel()
+    panels = iter("abcdefg")
 
-    for ax, panel, v in zip(flat, "abcd", VARS):
+    for ax, v in zip(flat, STD_VARS):
         label, scale, unit = UNITS[v]
-        draw(ax, d, hosts, sources, f"std_{v}", lambda a, s=scale: a * s, z)
-        style(ax, panel, f"std({label})  [{unit}]",
-              "height  [km]" if ax is flat[0] or ax is flat[3] else "")
+        vh = var_hosts(d, hosts, v)
+        draw(ax, d, vh, sources, f"std_{v}", lambda a, s=scale: a * s, z)
+        # Only a panel drawn over a reduced host set says how many; the rest
+        # are the figure's stated nine and repeating it would be noise.
+        note = "" if len(vh) == len(hosts) else f"  ({len(vh)} hosts)"
+        style(ax, next(panels), f"std({label})  [{unit}]{note}",
+              "height  [km]" if ax in (flat[0], flat[NCOL]) else "")
 
-    draw(flat[4], d, hosts, sources, "cf", lambda a: a, z)
-    style(flat[4], "e", "cloud fraction", "")
-    flat[4].set_xlim(left=0)
+    cf_ax = flat[len(STD_VARS)]
+    draw(cf_ax, d, hosts, sources, "cf", lambda a: a, z)
+    style(cf_ax, next(panels), "cloud fraction", "")
+    cf_ax.set_xlim(left=0)
 
-    flat[5].axis("off")
-    flat[5].legend(handles=legend_handles(sources, names), loc="center",
-                   handlelength=1.6)
+    used = len(STD_VARS) + 1
+    if used >= flat.size:
+        raise SystemExit(
+            f"{used} panels do not leave a slot for the legend in a "
+            f"2 x {NCOL} grid; widen the grid")
+    for ax in flat[used:]:
+        ax.axis("off")
+    flat[used].legend(handles=legend_handles(sources, names), loc="center",
+                      handlelength=1.6)
 
-    for ax in flat[:5]:
+    for ax in flat[:used]:
         ax.set_ylim(0, z[-1] / 1000.0)
     fig.tight_layout()
     return fig
@@ -319,6 +358,12 @@ def main():
     hosts = [str(h) for h in d["hosts"]]
     sets = [str(s) for s in d["sets"]]
     z = common_z(d, hosts)
+
+    no_p = [h for h in hosts if h not in var_hosts(d, hosts, "p")]
+    if no_p:
+        print(f"pressure panel over {len(hosts) - len(no_p)} of "
+              f"{len(hosts)} hosts; {no_p} archive no 3-D pressure and are "
+              f"dropped from BOTH bands in that panel")
 
     for lscale in [str(s) for s in d["lscales"]]:
         sources = ("host", *[f"{s}_{lscale}" for s in sets])

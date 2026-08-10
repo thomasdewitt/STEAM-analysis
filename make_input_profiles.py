@@ -18,6 +18,11 @@ qt = r_v + r_c + r_i (no precipitating water -- not all hosts archive it).
 MESONH is excluded (documented RCEMIP hus error, Known Bugs Sec. 17); ICON's z
 is recovered by inverting its frozen-MSE file with ICON's own constants.
 
+This file is also where the host readers live for the comparison statistics
+downstream (hydrodynamic-comparison/), which is why ADAPTERS is importable and
+why `pressure_field` sits beside it: the comparison must see each host through
+the same conventions that drove its runs.
+
 Usage: python make_input_profiles.py [host ...]     (default: all)
 """
 
@@ -68,9 +73,27 @@ def read_var(path, name, index=None):
 #    fields shaped (nz, ny, nx), one call per timestep index ────────────────
 
 
+# Which file holds timestep i, for the hosts that archive one file per
+# timestep. Factored out because PRESSURE below reads the same files: a
+# pressure field taken from a different timestep than the temperature beside
+# it would be a silent mismatch, and there would be nothing in either
+# function to show it.
+
+
+def _sam_file(i):
+    return sorted((DATA / "sam").glob("SAM_CRM_RCE_large300_3D_*.nc"))[i]
+
+
+def _cm1_file(subdir, i):
+    return sorted((DATA / subdir).glob("CM1_RCE_*300_3D_allvars_hour*.nc"))[i]
+
+
+def _ukmo_file(subdir, i):
+    return sorted((DATA / subdir).glob("*_RCE_large300_3D_*.nc"))[i]
+
+
 def sam(i):
-    files = sorted((DATA / "sam").glob("SAM_CRM_RCE_large300_3D_*.nc"))
-    path = files[i]
+    path = _sam_file(i)
     z = read_var(path, "z")
     T = read_var(path, "ta", 0)
     qv = read_var(path, "QV", 0)          # g/g mixing ratio already
@@ -82,8 +105,7 @@ def sam(i):
 
 
 def _cm1(subdir, i):
-    files = sorted((DATA / subdir).glob("CM1_RCE_*300_3D_allvars_hour*.nc"))
-    path = files[i]
+    path = _cm1_file(subdir, i)
     z = read_var(path, "z")
     T = read_var(path, "ta", 0)
     qv = spec_to_mr(read_var(path, "hus", 0))
@@ -102,8 +124,7 @@ def les_cm1(i):
 
 
 def _ukmo(subdir, i):
-    files = sorted((DATA / subdir).glob("*_RCE_large300_3D_*.nc"))
-    path = files[i]
+    path = _ukmo_file(subdir, i)
     z = read_var(path, "rholev_zsea_rho")
     T = read_var(path, "ta", 0)
     qv = spec_to_mr(read_var(path, "hus", 0))
@@ -176,25 +197,31 @@ def _icon(main_file, fmse_file, fmse_var, i):
             flip(spec_to_mr(cli)), p_surf)
 
 
+# host -> (main file, frozen-MSE file). Named here rather than inside each
+# adapter because PRESSURE below reads pa out of the same main file.
+ICON_FILES = {
+    "icon_lem": (DATA / "icon_lem" / "ICON_LEM_CRM-RCE_large_300-3D_last25d.nc",
+                 DATA / "icon_lem"
+                 / "ICON_LEM_CRM-RCE_large_300-3D_FMSE_6h_last25d.nc"),
+    "icon_nwp": (DATA / "icon_nwp" / "ICON_NWP_CRM-RCE_large_300-3D_last25d.nc",
+                 DATA / "icon_nwp"
+                 / "ICON_NWP_CRM-RCE_large_300-3D_FMSE_last25d.nc"),
+    "les_icon_lem": (
+        DATA / "les_icon_lem" / "ICON_LEM_CRM-RCE_small_les_300-3D_t3.nc",
+        DATA / "les_icon_lem" / "ICON_LEM_CRM-RCE_small_les_300-3D_FMSE_t3.nc"),
+}
+
+
 def icon_lem(i):
-    d = DATA / "icon_lem"
-    return _icon(d / "ICON_LEM_CRM-RCE_large_300-3D_last25d.nc",
-                 d / "ICON_LEM_CRM-RCE_large_300-3D_FMSE_6h_last25d.nc",
-                 "fmse_3d", i)
+    return _icon(*ICON_FILES["icon_lem"], "fmse_3d", i)
 
 
 def icon_nwp(i):
-    d = DATA / "icon_nwp"
-    return _icon(d / "ICON_NWP_CRM-RCE_large_300-3D_last25d.nc",
-                 d / "ICON_NWP_CRM-RCE_large_300-3D_FMSE_last25d.nc",
-                 "fmse_3d", i)
+    return _icon(*ICON_FILES["icon_nwp"], "fmse_3d", i)
 
 
 def les_icon_lem(i):
-    d = DATA / "les_icon_lem"
-    return _icon(d / "ICON_LEM_CRM-RCE_small_les_300-3D_t3.nc",
-                 d / "ICON_LEM_CRM-RCE_small_les_300-3D_FMSE_t3.nc",
-                 "fmse_3d", i)
+    return _icon(*ICON_FILES["les_icon_lem"], "fmse_3d", i)
 
 
 def les_sam(i):
@@ -226,7 +253,28 @@ def _twpice_field(path, name, y_first):
     """Read a TWPICE (time, ., ., z) field into a contiguous (z, y, x) float32
     array, one horizontal slab at a time. A single 2048^2 x 255 field is 4.3 GB
     (8.6 GB for the float64 MSE), so the whole file is never held at once, and
-    the z-last file layout would make per-level reductions cache-hostile."""
+    the z-last file layout would make per-level reductions cache-hostile.
+
+    y_first says which of the two middle axes is y. EVERY TWPICE FILE HERE IS
+    (time, y, x, z), including the MSE one -- whose dimensions are NAMED
+    ('time', 'x', 'y', 'z') but whose data is laid out like the rest. The
+    domain is square, so nothing about the shapes gives that away; what does
+    is that MSE agrees with the archived TABS and QV pointwise only when read
+    unswapped:
+
+        MSE - TABS - (g z + 2.5104e6 qv) / cp     residual std 0.0023 K
+        transposed                                residual std 4.3 K
+
+    2.5104e6 is SAM's own latent heat, not steam's 2.5e6; with steam's
+    constant the same residual picks up a +0.19 K mean at the surface,
+    decaying with qv. See the note in twpice() below.
+
+    Until 2026-08-10 MSE was read with y_first=False, i.e. transposed. Every
+    statistic taken from it was per-level and permutation-invariant -- level
+    means for the driving profiles, per-level standard deviations, cloud
+    fraction, single-level PDFs -- so no published number moves. It would
+    have mattered the moment h was combined POINTWISE with qv, qc or qi,
+    which is exactly what recovering T from MSE does."""
     ds = netCDF4.Dataset(path)
     ds.set_auto_mask(False)
     v = ds.variables[name]
@@ -271,17 +319,23 @@ def twpice(i):
     qv_file = d / "TWPICE_LPT_3D_QV_0000003450.nc"
     z = read_var(qv_file, "z")
     pres = read_var(qv_file, "pres")                       # 1-D, mb
-    # g/kg SAM mixing ratios already; axis order is (y, x, z) here but
-    # (x, y, z) in the MSE file.
+    # g/kg SAM mixing ratios already; axis order is (y, x, z) in every one of
+    # these files, the MSE included -- see _twpice_field.
     qv = _twpice_field(qv_file, "QV", True)
     qc = _twpice_field(d / "TWPICE_LPT_3D_QC_0000003450.nc", "QC", True)
     qi = _twpice_field(d / "TWPICE_LPT_3D_QI_0000003450.nc", "QI", True)
     qv /= 1000.0
     qc /= 1000.0
     qi /= 1000.0
-    # No temperature field is archived: MSE is in K, = T + (g*z + Lv*qv)/cp
-    # with steam's constants. Invert in place so T never costs a second array.
-    T = _twpice_field(d / "TWPICE_LPT_3D_MSE_0000003450.nc", "MSE", False)
+    # T is recovered from MSE rather than read from the TABS file that has sat
+    # beside these since 2026-08-10, and deliberately: h is built back up from
+    # this T as cp*T + g*z + Lv*qv, so recovering T with steam's Lv makes that
+    # h exactly cp*MSE -- SAM's own moist static energy, carried through
+    # unchanged. Reading TABS instead would rebuild h with steam's Lv against
+    # SAM's 2.5104e6 and move the driving profile by ~195 J/kg at the surface,
+    # which is a change to what every TWPICE run is driven by, not a bug fix.
+    # The comparison statistics DO read TABS, where nothing is rebuilt from it.
+    T = _twpice_field(d / "TWPICE_LPT_3D_MSE_0000003450.nc", "MSE", True)
     for k in range(z.size):
         T[k] -= (g * z[k] + Lv * qv[k]) / cp
     return z, T, qv, qc, qi, float(pres[0]) * 100.0
@@ -296,6 +350,90 @@ ADAPTERS = {
     "gate": gate, "twpice": twpice, "les_cm1": les_cm1, "les_sam": les_sam,
     "les_dales": les_dales, "les_icon_lem": les_icon_lem,
 }
+
+# ── 3-D pressure, for the comparison statistics rather than for driving ────
+#
+# Nothing here is used to build an input profile: STEAM is driven by h, qt and
+# a scalar surface pressure, and the adapters above already return the last of
+# those. This is the host counterpart of the `p` field steam's
+# compute_diagnostics writes, so that std(p) can be compared the way std(T) is
+# (hydrodynamic-comparison/scripts/compute_*_stats.py, 2026-08-10).
+#
+# It lives beside the adapters, and reads through the same per-timestep file
+# helpers, so that the pressure a host reports and the temperature it reports
+# cannot come from different files.
+#
+# NOT EVERY HOST ARCHIVES IT, and the missing ones are missing on the
+# Expansion originals too, not just in the local copy:
+#
+#   scale, ucla         RCEMIP output is one file per variable and pressure is
+#                       not among them (checked 2026-08-10)
+#   les_dales           no pa in the DALES output, as the adapter already says
+#   twpice, gate,       SAM archives a one-dimensional reference p(z) and a
+#   les_sam             PP that is the anelastic DYNAMIC pressure perturbation.
+#                       Neither is the thermodynamic pressure field STEAM
+#                       computes: p(z) has no horizontal variance at all, and
+#                       PP is a different quantity rather than a coarser
+#                       version of the same one.
+#
+# For those hosts the entry is None, which is a statement that the comparison
+# cannot be made -- not a value to fill in. Callers are expected to drop the
+# host from the pressure panel and say so, rather than substitute anything.
+
+
+def _pa_bottom_up(path, i):
+    """3-D pressure [Pa] shaped (nz, ny, nx), bottom-up, for timestep i."""
+    return read_var(path, "pa", i)
+
+
+def _pa_sam(i):
+    return _pa_bottom_up(_sam_file(i), 0)
+
+
+def _pa_cm1(i):
+    return _pa_bottom_up(_cm1_file("cm1", i), 0)
+
+
+def _pa_les_cm1(i):
+    return _pa_bottom_up(_cm1_file("les_cm1", i), 0)
+
+
+def _pa_ukmo(subdir):
+    return lambda i: _pa_bottom_up(_ukmo_file(subdir, i), 0)
+
+
+def _pa_icon(host):
+    # ICON's z index runs top-down, as in _icon above; flipped here so the
+    # field is on the same bottom-up z the adapter returns.
+    return lambda i: read_var(ICON_FILES[host][0], "pa", i)[::-1]
+
+
+PRESSURE = {
+    "sam": _pa_sam,
+    "cm1": _pa_cm1,
+    "les_cm1": _pa_les_cm1,
+    "ukmo_casim": _pa_ukmo("ukmo_casim"),
+    "ukmo_ra1t": _pa_ukmo("ukmo_ra1t"),
+    "ukmo_ra1t_nocloud": _pa_ukmo("ukmo_ra1t_nocloud"),
+    "icon_lem": _pa_icon("icon_lem"),
+    "icon_nwp": _pa_icon("icon_nwp"),
+    "les_icon_lem": _pa_icon("les_icon_lem"),
+    "scale": None, "ucla": None, "les_dales": None,
+    "twpice": None, "gate": None, "les_sam": None,
+}
+
+
+def pressure_field(host, i):
+    """The host's 3-D pressure [Pa] at timestep i, or None if it has none.
+
+    Shaped and oriented like the adapter's other fields: (nz, ny, nx),
+    bottom-up, on the adapter's own z.
+    """
+    if host not in PRESSURE:
+        raise KeyError(f"unknown host {host!r} (have {list(PRESSURE)})")
+    reader = PRESSURE[host]
+    return None if reader is None else np.asarray(reader(i))
+
 
 # The RCE_large300 channel hosts archive three well-separated timesteps each;
 # the comparison datasets below them are single snapshots.

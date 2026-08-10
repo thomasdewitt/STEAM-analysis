@@ -7,6 +7,33 @@ generated from its profile by run_gigales_simulations.py, brings them onto
 a common resolution, and writes everything plot_gigales.py needs into
 gigales_stats.npz, keyed by case.
 
+T AND p JOINED THE STANDARD DEVIATIONS ON 2026-08-10, computed exactly like
+h, qt, qc and qi -- same coarsening, same matching, same pooling over
+members. The PDFs are unchanged, still the original four variables.
+
+On the STEAM side both are read straight off each member, where
+compute_diagnostics wrote them from the same column solve as qc and qi.
+Members generated before run_gigales_simulations.py's KEEP list grew do not
+carry them and cannot be backfilled -- the working file they were stripped
+from is gone -- so this script refuses such an ensemble by name rather than
+quietly dropping two panels.
+
+On the HOST side T is available for both cases and p for NEITHER:
+
+  twpice   TABS, copied off Expansion on 2026-08-10 -- the archived
+           temperature, on the same grid and the same timestep as the MSE and
+           mixing-ratio files already here. It is read rather than recovered
+           by inverting MSE, so T is the host's own field here exactly as it
+           is for every RCEMIP host, and h stays what SAM archived rather
+           than becoming a function of the T beside it.
+  gate     archives TABS directly.
+  both     archive a one-dimensional reference p(z), which has no horizontal
+           variance at all, and a PP that is the anelastic DYNAMIC pressure
+           perturbation -- a different quantity from the thermodynamic
+           pressure STEAM computes, not a coarser version of it. So there is
+           no host pressure std to compare against, and none is invented; the
+           pressure panel carries the STEAM curves alone and says so.
+
 POOLING, and where it stops (2026-08-10). The STEAM side is five members
 per amplitude, and what is reported per level is the statistic of the
 pooled sample -- the five members' horizontal planes stacked into one
@@ -83,8 +110,8 @@ from steam.constants import (
     gravity as g,
 )
 
-from common import (VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_factor,
-                    coarsen_xyz, match_factors, reduce_source)
+from common import (VARS, STD_VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_factor,
+                    coarsen_xyz, match_factors, reduce_source, std_vars)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -108,11 +135,14 @@ GATE_FILE = "GATE_IDEAL_S_2048x2048x256_100m_2s_2048_0000041400.nc"   # 23 h
 
 
 def twpice_fields(xy_coarsen):
-    """TWPICE h, qt, qc, qi on STEAM's grid, each (nx, ny, nz).
+    """TWPICE h, qt, T, qc, qi on STEAM's grid, each (nx, ny, nz).
 
     Each 2048^2 x 255 field is 4.3 GB, so they are read and coarsened one at a
-    time. The MSE file's horizontal axes are (x, y); the mixing-ratio files'
-    are (y, x) -- hence the differing flag, as in make_input_profiles.py.
+    time. All five files are (y, x, z), the MSE included despite its dimension
+    NAMES saying otherwise -- see make_input_profiles._twpice_field, which
+    carried the wrong flag for MSE until 2026-08-10. Nothing in this file's
+    output moved when it was corrected: every statistic here is per-level and
+    permutation-invariant.
 
     Everything is cast to float64 at the moment of reading, before any
     arithmetic touches it. MSE is K-scale, where a float32 accumulator drifts
@@ -130,20 +160,21 @@ def twpice_fields(xy_coarsen):
         print(f"  {name} -> {c.shape}", flush=True)
         return c * scale
 
-    h = load("MSE", False, cp)          # SAM stores MSE in K; h = cp * MSE
+    h = load("MSE", True, cp)           # SAM stores MSE in K; h = cp * MSE
     qv = load("QV", True, 1e-3)         # SAM mixing ratios are g/kg
     qc = load("QC", True, 1e-3)
     qi = load("QI", True, 1e-3)
+    T = load("TABS", True, 1.0)         # K, archived; not inverted from MSE
     qt = qv + qc + qi                   # no precipitating water, by ruling
     del qv
 
-    fields = {"h": h, "qt": qt, "qc": qc, "qi": qi}
+    fields = {"h": h, "qt": qt, "T": T, "qc": qc, "qi": qi}
     # z last, to match STEAM's layout for the level reductions below.
     return z, {k: np.moveaxis(v, 0, -1) for k, v in fields.items()}
 
 
 def gate_fields(xy_coarsen):
-    """GATE h, qt, qc, qi on STEAM's grid, each (nx, ny, nz), and its z.
+    """GATE h, qt, T, qc, qi on STEAM's grid, each (nx, ny, nz), and its z.
 
     Read one variable at a time, as for TWPICE. TABS is cast to float64 on
     read (K-scale) and the condensate is partitioned at native resolution
@@ -169,23 +200,52 @@ def gate_fields(xy_coarsen):
                         * 1e-3, xy_coarsen)
     h = cp * Tc + g * z[:, None, None] + Lv * qv
     qt = qv + qc + qi
-    del Tc, qv
+    del qv
     print(f"  gate coarsened to {h.shape}", flush=True)
-    fields = {"h": h, "qt": qt, "qc": qc, "qi": qi}
+    fields = {"h": h, "qt": qt, "T": Tc, "qc": qc, "qi": qi}
     return z, {k: np.moveaxis(v, 0, -1) for k, v in fields.items()}
 
 
+def check_ensemble(case):
+    """Every member of every amplitude exists and carries STD_VARS.
+
+    Run BEFORE the host is loaded, which is the whole point of it being a
+    pass of its own: the TWPICE host is five 4.3 GB fields and minutes of
+    I/O, and finding out afterwards that member 03 has no `p` wastes all of
+    it. Opening thirty files to read their variable lists costs nothing --
+    no data is touched.
+
+    T and p come from compute_diagnostics, and a keeper stripped before
+    run_gigales_simulations.py's KEEP list grew does not have them. That is
+    not recoverable from the keeper: the working file it was stripped from
+    is gone, so the member has to be regenerated.
+    """
+    for set_tag in SETS:
+        for m in range(N_MEMBERS):
+            path = RUNS / f"{case}_{set_tag}_m{m:02d}.nc"
+            if not path.exists():
+                raise SystemExit(
+                    f"{path.name} not found -- run "
+                    f"run_gigales_simulations.py {case} {set_tag} first")
+            with netCDF4.Dataset(path) as ds:
+                missing = [v for v in STD_VARS if v not in ds.variables]
+            if missing:
+                raise SystemExit(
+                    f"{path.name} has no {missing}; that keeper predates the "
+                    f"current KEEP list and nothing backfills it. Delete the "
+                    f"{case} keepers and rerun run_gigales_simulations.py")
+
+
 def open_members(case, set_tag):
-    """The ensemble's keepers for one configuration, and their z axis."""
+    """The ensemble's keepers for one configuration, and their z axis.
+
+    Existence and contents are check_ensemble's job and it has already run;
+    what is checked here is the one thing that needs every member open at
+    once, that they share a vertical grid.
+    """
     handles, z_axis = [], None
     for m in range(N_MEMBERS):
         path = RUNS / f"{case}_{set_tag}_m{m:02d}.nc"
-        if not path.exists():
-            for h in handles:
-                h.close()
-            raise SystemExit(
-                f"{path.name} not found -- run "
-                f"run_gigales_simulations.py {case} {set_tag} first")
         ds = netCDF4.Dataset(path)
         ds.set_auto_mask(False)
         z = ds.variables["z"][:].astype(np.float64)
@@ -230,13 +290,17 @@ def reduce_ensemble(case, set_tag, z_levels, factors, out):
                   five times the samples -- the same way the RCEMIP host
                   side pools its three snapshots.
 
+    The standard deviations are over STD_VARS, the PDF slices over the four
+    in VARS: T and p are on the profile figure only, and keeping their planes
+    at the PDF levels would be 40 MB apiece for nothing.
+
     Read a level at a time across members, which is what the keepers' one
     level per chunk is for. A level's stack is 42 MB in float64.
     """
     handles, z_axis = open_members(case, set_tag)
     nlev = z_levels.size
-    pooled = {v: np.empty(nlev) for v in VARS}
-    per_member = {v: np.empty((N_MEMBERS, nlev)) for v in VARS}
+    pooled = {v: np.empty(nlev) for v in STD_VARS}
+    per_member = {v: np.empty((N_MEMBERS, nlev)) for v in STD_VARS}
     cf_pooled = np.empty(nlev)
     cf_member = np.empty((N_MEMBERS, nlev))
     pdf_at = {int(np.argmin(np.abs(z_levels - z))): z for z in PDF_LEVELS}
@@ -246,7 +310,7 @@ def reduce_ensemble(case, set_tag, z_levels, factors, out):
         for j, (z, n) in enumerate(zip(z_levels, factors)):
             i0 = window(z_axis, z, n)
             planes = {}
-            for v in VARS:
+            for v in STD_VARS:
                 stack = np.stack([
                     ds.variables[v][:, :, i0:i0 + n].mean(axis=-1,
                                                           dtype=np.float64)
@@ -266,7 +330,7 @@ def reduce_ensemble(case, set_tag, z_levels, factors, out):
         for ds in handles:
             ds.close()
 
-    for v in VARS:
+    for v in STD_VARS:
         out[f"std_{v}_{case}_{set_tag}"] = pooled[v]
         out[f"std_{v}_{case}_{set_tag}_members"] = per_member[v]
     out[f"cf_{case}_{set_tag}"] = cf_pooled
@@ -296,6 +360,9 @@ def host_z(case, xy_coarsen):
 
 
 def do_case(case, out):
+    # Before anything expensive: the whole ensemble is there and carries
+    # what will be asked of it. Thirty variable lists, no data read.
+    check_ensemble(case)
     # The z axis alone fixes the comparison levels and the coarsening
     # factors, so read the grids before loading anything large. Sources are
     # then loaded, reduced and freed one at a time -- holding a host and both
@@ -320,12 +387,20 @@ def do_case(case, out):
     z_host_axis, host = HOST_LOADER[case](xy_coarsen)
     std, cf, slices = reduce_source(z_host_axis, host, z_levels, n_host)
     del host
-    for v in VARS:
+    for v in std:
         out[f"std_{v}_{case}_host"] = std[v]
+    # Which variables the host side actually reported, recorded rather than
+    # left to be inferred from which keys exist. Neither SAM case has a
+    # comparable 3-D pressure, so the figure draws STEAM alone in that panel
+    # and needs to be told, not to guess.
+    out[f"{case}_host_vars"] = np.array(std_vars(std))
     out[f"cf_{case}_host"] = cf
     for k, a in slices.items():
         out[f"pdf_{k}_{case}_host"] = a
-    print(f"  {case} host reduced", flush=True)
+    absent = [v for v in STD_VARS if v not in std]
+    print(f"  {case} host reduced"
+          + (f"; no host {absent} -- STEAM only in those panels"
+             if absent else ""), flush=True)
 
     for tag in SETS:
         reduce_ensemble(case, tag, z_levels, n_steam, out)
