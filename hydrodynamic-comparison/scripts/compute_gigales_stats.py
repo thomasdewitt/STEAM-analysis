@@ -7,18 +7,19 @@ generated from its profile by run_gigales_simulations.py, brings them onto
 a common resolution, and writes everything plot_gigales.py needs into
 gigales_stats.npz, keyed by case.
 
-T AND p JOINED THE STANDARD DEVIATIONS ON 2026-08-10, computed exactly like
-h, qt, qc and qi -- same coarsening, same matching, same pooling over
-members. The PDFs are unchanged, still the original four variables.
+T JOINED THE STANDARD DEVIATIONS ON 2026-08-10, computed exactly like h,
+qt, qc and qi -- same coarsening, same matching, same pooling over members.
+The PDFs are unchanged, still the original four variables. Pressure was added
+the same day and dropped again; see common.py for why.
 
-On the STEAM side both are read straight off each member, where
-compute_diagnostics wrote them from the same column solve as qc and qi.
+On the STEAM side T is read straight off each member, where
+compute_diagnostics wrote it from the same column solve as qc and qi.
 Members generated before run_gigales_simulations.py's KEEP list grew do not
-carry them and cannot be backfilled -- the working file they were stripped
+carry it and cannot be backfilled -- the working file they were stripped
 from is gone -- so this script refuses such an ensemble by name rather than
-quietly dropping two panels.
+quietly dropping a panel.
 
-On the HOST side T is available for both cases and p for NEITHER:
+On the HOST side both cases archive a temperature directly:
 
   twpice   TABS, copied off Expansion on 2026-08-10 -- the archived
            temperature, on the same grid and the same timestep as the MSE and
@@ -26,63 +27,7 @@ On the HOST side T is available for both cases and p for NEITHER:
            by inverting MSE, so T is the host's own field here exactly as it
            is for every RCEMIP host, and h stays what SAM archived rather
            than becoming a function of the T beside it.
-  gate     archives TABS directly.
-  both     archive a one-dimensional reference p(z) -- the pressure SAM's own
-           thermodynamics uses, and horizontally constant, so its std is zero
-           by construction -- plus PP, the anelastic pressure perturbation
-           solved from the elliptic constraint.
-
-           p_bar + PP is the only candidate host pressure, and it was measured
-           against the quantity STEAM actually builds before being rejected:
-           a hydrostatic march on GATE's OWN T and qv from a uniform surface
-           pressure, at this resolution (2026-08-10, scratch probe).
-
-               z        std(PP)   std(hydrostatic)   ratio   corr
-               150 m     6.6 Pa        1.7 Pa         0.26   -0.41
-               2.8 km    5.2 Pa        9.5 Pa         1.84    0.65
-               9.6 km    2.5 Pa        7.9 Pa         3.16    0.24
-               19.4 km   1.6 Pa        2.4 Pa         1.49    0.72
-
-           They are the SAME ORDER -- within 1.5-3.6x -- so the objection is
-           not one of magnitude. It is that they are weakly correlated, 0.16
-           to 0.72 and mostly 0.2-0.5: the same size, but not the same field.
-           PP is constrained by the anelastic solve; the hydrostatic march
-           accumulates the column's own Tv anomaly over the whole depth.
-
-           So no host pressure std is written, and none is invented. The
-           panel carries the STEAM curves alone and says so.
-
-           WORTH KNOWING IF THIS IS REVISITED: that march is constructible
-           from any host's T and qv, including the four that archive no 3-D
-           pressure, and would be like-for-like with STEAM by construction.
-           Adopting it would be a methodological ruling -- a diagnostic built
-           rather than a field read -- and has not been made.
-
-POOLING, and where it stops (2026-08-10). The STEAM side is five members
-per amplitude, and what is reported per level is the statistic of the
-pooled sample -- the five members' horizontal planes stacked into one
-(member, y, x) array and reduced whole, so the standard deviation is over
-member and horizontal axes together. The PDF samples are pooled the same
-way: the members' planes are kept stacked and the histogram flattens them,
-giving five times the samples at each level.
-
-Per-member statistics are ALSO written, `..._members`, because the profile
-figure wants both: a pooled line, and an envelope over the individual
-realizations showing how far a single draw moves. That envelope is a
-spread over runs, not a pooled quantity, and the two are kept separate all
-the way to the figure.
-
-Amplitudes are never pooled with each other, nor the two cases: c is a
-configuration and so is the driving profile, and the pool is over
-realizations of one configuration.
-
-Two cases, both SAM at 2048^2 x 100 m so both take the identical STEAM
-config: TWPICE (the paper's lead comparison) and GATE (idealized maritime
-deep convection, hour 23 -- the last hour with complete data; 20 h and 24 h
-exist only as 210-level gap files rebuilt from .dat). GATE archives only the
-combined condensate QN, so its liquid/ice split is reconstructed with SAM's
-own linear ramp (all liquid at 0 C, all ice at -38 C) BEFORE any coarsening,
-since the ramp is nonlinear in temperature and would not commute with it.
+  gate     TABS directly.
 
 MATCHING, in two steps (2026-08-10).
 
@@ -115,7 +60,14 @@ SAM fields. h is c_p times the archived MSE, which SAM stores in K and
 non-frozen; nothing is reconstructed. qt is qv + qc + qi, excluding the
 precipitating species (QR/QS/QG are archived but deliberately left out, the
 same convention make_input_profiles.py uses for the driving profiles). There
-is no QT or TABS field in the SAM output at all.
+is no QT field. TABS there is, for both cases, since 2026-08-10 -- TWPICE's
+was generated onto Expansion that morning and copied in.
+
+Note that SAM's MSE and this comparison's h do not use the same latent heat:
+SAM's is 2.5104e6 against steam's 2.5e6, worth +0.19 K equivalent at the
+surface and decaying with qv. h is carried through as c_p * MSE regardless,
+so the host's own energy variable is what is reported; T is the archived
+TABS. Neither is derived from the other.
 
 Comparison levels are the host's own, clipped to STEAM's 20 km top.
 
@@ -135,7 +87,7 @@ from steam.constants import (
 )
 
 from common import (VARS, STD_VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_factor,
-                    coarsen_xyz, match_factors, reduce_source, std_vars)
+                    coarsen_xyz, match_factors, reduce_source)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -239,8 +191,8 @@ def check_ensemble(case):
     it. Opening thirty files to read their variable lists costs nothing --
     no data is touched.
 
-    T and p come from compute_diagnostics, and a keeper stripped before
-    run_gigales_simulations.py's KEEP list grew does not have them. That is
+    T comes from compute_diagnostics, and a keeper stripped before
+    run_gigales_simulations.py's KEEP list grew does not have it. That is
     not recoverable from the keeper: the working file it was stripped from
     is gone, so the member has to be regenerated.
     """
@@ -315,8 +267,8 @@ def reduce_ensemble(case, set_tag, z_levels, factors, out):
                   side pools its three snapshots.
 
     The standard deviations are over STD_VARS, the PDF slices over the four
-    in VARS: T and p are on the profile figure only, and keeping their planes
-    at the PDF levels would be 40 MB apiece for nothing.
+    in VARS: T is on the profile figure only, and keeping its planes at the
+    PDF levels would be 40 MB for nothing.
 
     Read a level at a time across members, which is what the keepers' one
     level per chunk is for. A level's stack is 42 MB in float64.
@@ -411,20 +363,12 @@ def do_case(case, out):
     z_host_axis, host = HOST_LOADER[case](xy_coarsen)
     std, cf, slices = reduce_source(z_host_axis, host, z_levels, n_host)
     del host
-    for v in std:
+    for v in STD_VARS:
         out[f"std_{v}_{case}_host"] = std[v]
-    # Which variables the host side actually reported, recorded rather than
-    # left to be inferred from which keys exist. Neither SAM case has a
-    # comparable 3-D pressure, so the figure draws STEAM alone in that panel
-    # and needs to be told, not to guess.
-    out[f"{case}_host_vars"] = np.array(std_vars(std))
     out[f"cf_{case}_host"] = cf
     for k, a in slices.items():
         out[f"pdf_{k}_{case}_host"] = a
-    absent = [v for v in STD_VARS if v not in std]
-    print(f"  {case} host reduced"
-          + (f"; no host {absent} -- STEAM only in those panels"
-             if absent else ""), flush=True)
+    print(f"  {case} host reduced", flush=True)
 
     for tag in SETS:
         reduce_ensemble(case, tag, z_levels, n_steam, out)

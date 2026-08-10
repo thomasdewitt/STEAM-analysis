@@ -3,20 +3,17 @@
 but across the nine hosts.
 
 For each RCE_large300 channel host: per-level standard deviations of h, qt,
-T, p, qc and qi, cloud fraction, and the single-level fields the PDFs are
-drawn from -- for the host itself and for all six STEAM runs driven by its
+T, qc and qi, cloud fraction, and the single-level fields the PDFs are drawn
+from -- for the host itself and for all six STEAM runs driven by its
 profile. Everything lands in rcemip_stats.npz keyed by host.
 
-T AND p JOINED THE PROFILES ON 2026-08-10 and are computed exactly like the
-four already there: same coarsening, same matching, same pooling, same
-reduction. On the STEAM side they are read straight off the run --
-compute_diagnostics writes T and p beside qc and qi from the same column
-solve. On the host side T is archived by every host here; PRESSURE IS NOT.
-scale and ucla archive no 3-D pressure at all (not locally and not on the
-Expansion originals), so for those two the host std_p key is simply absent
-and `p_hosts` records who did contribute. A host without it is dropped from
-that one panel; nothing is substituted for it. The PDFs are unchanged --
-still the original four variables.
+T JOINED THE PROFILES ON 2026-08-10 and is computed exactly like the four
+already there: same coarsening, same matching, same pooling, same reduction.
+On the STEAM side it is read straight off the run -- compute_diagnostics
+writes T beside qc and qi from the same column solve -- and on the host side
+it is the archived `ta`. The PDFs are unchanged, still the original four
+variables. Pressure was added the same day and dropped again; see common.py
+for why.
 
 SIX STEAM runs per host, not two (2026-08-08): three flux amplitudes
 crossed with two outer scales, L set to the channel's long axis (6144 km)
@@ -82,8 +79,7 @@ from steam.constants import (
 )
 
 from common import (VARS, STD_VARS, CLOUD_KGKG, coarsen_factor, coarsen_xyz,
-                    level_planes, match_factors, pdf_slices, reduce_source,
-                    std_vars)
+                    level_planes, match_factors, pdf_slices, reduce_source)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -94,7 +90,7 @@ RUNS = REPO / "runs" / "hydro"
 OUT = OUTPUT / "rcemip_stats.npz"
 
 sys.path.insert(0, str(REPO))
-from make_input_profiles import ADAPTERS, pressure_field   # noqa: E402
+from make_input_profiles import ADAPTERS                   # noqa: E402
 
 HOSTS = ("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
          "scale", "ucla", "icon_lem", "icon_nwp")
@@ -105,17 +101,13 @@ SNAPSHOTS = (0, 1, 2)
 
 
 def host_fields(host, snapshot, xy_coarsen):
-    """Host h, qt, T, qc, qi (and p where archived) on STEAM's grid, and z.
+    """Host h, qt, T, qc and qi on STEAM's grid at one snapshot, and its z.
 
     Coarsened in f x f x f blocks, vertically as well as horizontally, and
     the z axis with them so the fields and their own coordinate stay on one
     grid. h is formed at native resolution and coarsened after, which is
     the same number either way -- it is linear in T, z and qv. T is the
     host's own archived field, block-averaged like everything else.
-
-    p is present only for the hosts that archive a 3-D pressure; the key is
-    left out entirely for the others rather than filled with anything, and
-    common.std_vars is what carries that through the reduction.
     """
     z, T, qv, qc, qi, _ = ADAPTERS[host](snapshot)
     z = np.asarray(z, dtype=np.float64)
@@ -123,18 +115,9 @@ def host_fields(host, snapshot, xy_coarsen):
     h = cp * T + g * z[:, None, None] + Lv * qv
     qt = qv + qc + qi
     fields = {"h": h, "qt": qt, "T": T, "qc": qc, "qi": qi}
-    pa = pressure_field(host, snapshot)
-    if pa is not None:
-        if pa.shape != T.shape:
-            raise SystemExit(
-                f"{host} t{snapshot}: pa is {pa.shape} but ta is {T.shape}; "
-                f"the pressure field is not on the adapter's grid")
-        fields["p"] = pa.astype(np.float64)
     coarse = {k: coarsen_xyz(v, xy_coarsen) for k, v in fields.items()}
     z = coarsen_xyz(z, xy_coarsen)
-    print(f"  {host} host {T.shape} -> {coarse['h'].shape}"
-          f"{'' if pa is not None else '  (no 3-D pressure archived)'}",
-          flush=True)
+    print(f"  {host} host {T.shape} -> {coarse['h'].shape}", flush=True)
     # z last, to match STEAM's layout for the level reductions.
     return z, {k: np.moveaxis(v, 0, -1) for k, v in coarse.items()}
 
@@ -146,15 +129,14 @@ def steam_fields(host, set_tag, lscale):
     so a run regenerated on a different geometry is described by the geometry
     it actually has.
 
-    Every STD_VAR is required here, unlike on the host side: T and p are not
-    something a STEAM run may or may not have observed, they are written by
-    compute_diagnostics from the same solve as qc and qi. A run missing them
-    is a run whose diagnostics never ran, and quietly dropping the panel
-    would hide that.
+    Every STD_VAR is required: T is not something a STEAM run may or may not
+    have observed, it is written by compute_diagnostics from the same solve
+    as qc and qi. A run missing it is a run whose diagnostics never ran, and
+    quietly dropping the panel would hide that.
 
-    h, T and p are read in float64: all three are large-magnitude quantities
-    where the float32 storage granularity is a visible fraction of the
-    fluctuation being measured (p is ~1e5 Pa with a std of tens).
+    h and T are read in float64. Both are large-magnitude quantities where
+    the float32 storage granularity is a visible fraction of the fluctuation
+    being measured, and h is the standing K-scale accumulator gotcha.
     """
     path = RUNS / f"{host}_{set_tag}_{lscale}.nc"
     ds = netCDF4.Dataset(path)
@@ -168,7 +150,7 @@ def steam_fields(host, set_tag, lscale):
             f"diagnostics rerunning) before it can go in this comparison")
     z = ds.variables["z"][:].astype(np.float64)
     fields = {v: ds.variables[v][:] for v in STD_VARS}
-    for v in ("h", "T", "p"):
+    for v in ("h", "T"):
         fields[v] = fields[v].astype(np.float64)
     dx = float(ds.dx)
     outer_scale = float(ds.outer_scale)
@@ -209,8 +191,7 @@ def do_host(host, out):
     # The pooled sample, handed to numpy whole: axis 0 is the snapshot and
     # axes 2,3 are the horizontal, so reducing over all three is the
     # statistic of every snapshot's cells at that level as one population.
-    host_vars = std_vars(planes[0])
-    for v in host_vars:
+    for v in STD_VARS:
         stack = np.stack([p[v] for p in planes])       # (snap, lev, ny, nx)
         out[f"std_{v}_{host}_host"] = stack.std(axis=(0, 2, 3),
                                                 dtype=np.float64)
@@ -239,7 +220,7 @@ def do_host(host, out):
                         f"one set of matching factors")
             out[f"L_{lscale}"] = L
             std, cf, slices = reduce_source(z_s, fields, z_levels, n_steam)
-            for v in std:
+            for v in STD_VARS:
                 out[f"std_{v}_{host}_{tag}_{lscale}"] = std[v]
             out[f"cf_{host}_{tag}_{lscale}"] = cf
             for k, a in slices.items():
@@ -249,7 +230,6 @@ def do_host(host, out):
           f"host {xy_coarsen}x{xy_coarsen} coarsened to {steam_dx:.0f} m, "
           f"STEAM coarsened by {sorted(set(n_steam.tolist()))}, "
           f"host by {sorted(set(n_host.tolist()))}", flush=True)
-    return host_vars
 
 
 def main():
@@ -260,16 +240,8 @@ def main():
 
     out = {"hosts": np.array(hosts), "sets": np.array(SETS),
            "lscales": np.array(LSCALES)}
-    # Which hosts got a pressure std, recorded rather than left to be
-    # inferred from which keys happen to exist: the figure has to restrict
-    # BOTH sides of the pressure panel to these, and a band drawn over one
-    # host set against a band drawn over another is not a comparison.
-    p_hosts = [host for host in hosts if "p" in do_host(host, out)]
-    out["p_hosts"] = np.array(p_hosts)
-    if len(p_hosts) < len(hosts):
-        print(f"no 3-D pressure from "
-              f"{[h for h in hosts if h not in p_hosts]}; the pressure "
-              f"panel is over {len(p_hosts)} of {len(hosts)} hosts")
+    for host in hosts:
+        do_host(host, out)
 
     OUTPUT.mkdir(exist_ok=True)
     np.savez_compressed(OUT, **out)

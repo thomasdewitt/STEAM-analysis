@@ -3,30 +3,15 @@
 
 Same two figures as the TWPICE side, across all nine hosts at once:
 
-  rcemip_profiles  per-level standard deviation of h, qt, T, p, qc and qi,
-                   plus cloud fraction
+  rcemip_profiles  per-level standard deviation of h, qt, T, qc and qi, plus
+                   cloud fraction
   rcemip_pdfs      single-level distributions of h, qt, qc and qi at 5 and
                    10 km
 
-T AND p JOINED THE PROFILE FIGURE ON 2026-08-10, drawn exactly like the four
-that were already there. They are on the profiles only; the PDFs keep the
-original four.
-
-The pressure panel is over FEWER HOSTS than the rest, and both bands in it
-are restricted to the same reduced set: scale and ucla archive no 3-D
-pressure, so nine hosts become seven. Restricting only the host band would
-compare seven models' spread against twenty-seven STEAM runs driven by nine,
-which is not the comparison the panel claims. The panel is labelled with its
-own host count and the omission is printed at run time.
-
-AND IT IS NOT LIKE-FOR-LIKE AT THE BOTTOM. The hosts report their own full
-pressure, surface variability included -- ~40 Pa of it at the lowest levels.
-STEAM marches every column from ONE surface pressure, so its std(p) is
-identically zero there and can only accumulate upward. The low-level
-non-overlap in that panel is that boundary condition, not a result. What is
-a result is aloft, where STEAM reaches ~400 Pa against the hosts' ~20-50 --
-and even that is largely the std(T) excess in panel c integrated up the
-column rather than an independent measurement.
+T JOINED THE PROFILE FIGURE ON 2026-08-10, drawn exactly like the four that
+were already there, and on the profiles only; the PDFs keep the original
+four. A pressure panel was added beside it the same day and dropped again --
+see common.py.
 
 ONE FIGURE PER OUTER SCALE (2026-08-08), so each stem carries the tag:
 rcemip_profiles_Llong, rcemip_profiles_Lshort, and likewise for the PDFs.
@@ -224,35 +209,23 @@ def legend_handles(sources, names):
     return handles
 
 
-def var_hosts(d, hosts, v):
-    """The hosts behind one panel: everyone, except p's reduced set.
-
-    Read off the file rather than named here, because which hosts archive a
-    3-D pressure is a property of the datasets and the compute step is what
-    looked.
-    """
-    if v != "p":
-        return hosts
-    return [h for h in [str(x) for x in d["p_hosts"]] if h in hosts]
-
-
-NCOL = 4                           # 6 std panels + cloud fraction + legend
+# Five std panels plus cloud fraction fill a 2 x 3 grid exactly, so the
+# legend goes above the figure rather than into a spare axis. It used to sit
+# in the sixth slot, which existed only because there were four std panels;
+# a 2 x 4 grid to keep that habit would leave a dead quadrant.
+NCOL = 3
 
 
 def profiles(d, hosts, sources, names):
     z = common_z(d, hosts)
-    fig, axes = plt.subplots(2, NCOL, figsize=(11.6, 6.0), sharey=True)
+    fig, axes = plt.subplots(2, NCOL, figsize=(9.0, 6.0), sharey=True)
     flat = axes.ravel()
-    panels = iter("abcdefg")
+    panels = iter("abcdef")
 
     for ax, v in zip(flat, STD_VARS):
         label, scale, unit = UNITS[v]
-        vh = var_hosts(d, hosts, v)
-        draw(ax, d, vh, sources, f"std_{v}", lambda a, s=scale: a * s, z)
-        # Only a panel drawn over a reduced host set says how many; the rest
-        # are the figure's stated nine and repeating it would be noise.
-        note = "" if len(vh) == len(hosts) else f"  ({len(vh)} hosts)"
-        style(ax, next(panels), f"std({label})  [{unit}]{note}",
+        draw(ax, d, hosts, sources, f"std_{v}", lambda a, s=scale: a * s, z)
+        style(ax, next(panels), f"std({label})  [{unit}]",
               "height  [km]" if ax in (flat[0], flat[NCOL]) else "")
 
     cf_ax = flat[len(STD_VARS)]
@@ -261,18 +234,17 @@ def profiles(d, hosts, sources, names):
     cf_ax.set_xlim(left=0)
 
     used = len(STD_VARS) + 1
-    if used >= flat.size:
+    if used > flat.size:
         raise SystemExit(
-            f"{used} panels do not leave a slot for the legend in a "
-            f"2 x {NCOL} grid; widen the grid")
+            f"{used} panels do not fit a 2 x {NCOL} grid; widen it")
     for ax in flat[used:]:
         ax.axis("off")
-    flat[used].legend(handles=legend_handles(sources, names), loc="center",
-                      handlelength=1.6)
 
     for ax in flat[:used]:
         ax.set_ylim(0, z[-1] / 1000.0)
     fig.tight_layout()
+    fig.legend(handles=legend_handles(sources, names), loc="upper center",
+               ncol=4, handlelength=1.6, bbox_to_anchor=(0.5, 1.05))
     return fig
 
 
@@ -367,12 +339,6 @@ def main():
     hosts = [str(h) for h in d["hosts"]]
     sets = [str(s) for s in d["sets"]]
     z = common_z(d, hosts)
-
-    no_p = [h for h in hosts if h not in var_hosts(d, hosts, "p")]
-    if no_p:
-        print(f"pressure panel over {len(hosts) - len(no_p)} of "
-              f"{len(hosts)} hosts; {no_p} archive no 3-D pressure and are "
-              f"dropped from BOTH bands in that panel")
 
     for lscale in [str(s) for s in d["lscales"]]:
         sources = ("host", *[f"{s}_{lscale}" for s in sets])
