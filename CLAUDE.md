@@ -137,19 +137,48 @@ regenerable.
 ## small-domain/
 
 `scripts/run_steam_simulations.py` writes one finely resolved run per flux
-amplitude for visualization, on the square campaign's ukmo_ra1t profile, into
-`runs/small-domain/`. A 40.96 x 20.48 km parent at dx = 20 m, surface to 5 km,
-carries a centered 2.56 x 2.56 km nest at dx = 5 m to full depth
-(`refinements/r0`).
+amplitude per spheroscale for visualization: a parent carrying one centered
+nest (`refinements/r0`), on a single host's profile with anchored bounds.
+`RUN_NEST` switches the nest on or off; with it off the parent is written
+without refinement state, so turning the flag back on means rerunning the
+parent, and `run_nest` refuses such a file rather than failing deeper in
+`refine`. The geometry, the profile host and the tags live in the script's
+constants and are not repeated here — they are still moving.
 
-The vertical spacing follows dx through the aspect ratio, dz = k_z(2 dx) / 2:
-the parent is (2048, 1024, 463) at dz = 10.80 m, a 3.62 GiB field and ~38 GiB
-at the cascade's peak, and the nest is (512, 512, 1001) at dz = 5.00 m,
-0.98 GiB and ~10 GiB. Doubling dx from the earlier 10 m run is what makes the
-wider footprint fit — it halves the level count, so the parent field is
-actually smaller than the 2048 x 768 run it replaces. The nest's dz stops
-falling with dx because 2 dx has reached the 10 m spheroscale and the finest
-class is isotropic. The runs want the machine to themselves.
+**Spheroscale (2026-08-10).** The axis these runs exist to show, tagged by the
+spheroscale in metres zero-padded to four digits. Each case carries its own
+outer scale, because one L cannot serve both: k_z,L = l_s (L/l_s)^H_z rises
+with the spheroscale and `simulate` refuses any config whose k_z,L reaches the
+domain top. Raising the top instead is not the cheap way out, since dz follows
+the aspect ratio down — a taller domain buys room in levels the cascade then
+carries. So the coarser spheroscale runs the shorter L and the shallower class
+ladder, and the two pictures differ in cascade depth as well; that is the price
+of the axis rather than something the runs hide. The anchored bounds use the
+prescribed 300 K SST whatever the host, as `hydrodynamic-comparison/` does.
+
+**One seed for the campaign (2026-08-10).** `SEED` at the top of the script is
+what every run uses — no per-set or per-spheroscale offset, as there was when
+the axis went in. These are pictures read side by side, so they should differ
+by the knob varied and not by the realization underneath. It buys matching
+realizations, not identical fields: two runs agree only as far as their class
+ladders do, so the amplitudes at one spheroscale are the same cascade rescaled
+while the spheroscale cases share a starting point and diverge.
+
+**Stripping (2026-08-10).** Each case runs into `work_small_<set>_<sphero>.nc`
+and ends as a keeper `small_<set>_<sphero>.nc` holding qc and qi alone, in a
+`parent` group and a `nest` group, on the square campaign's precedent and using
+the same `KEEP_AUX` list. The working file is tens of GB — most of it the
+cascade state and the per-class increments the nest is cut from — and is
+deleted once the keeper is written, which costs the same thing it costs there:
+the keeper cannot seed a further nest. Restartable at stage granularity, a
+keeper with no working file marking a case complete. The keeper records the
+config it was made under (`config_spec`, plus `profile_host`, `run_nest` and
+`kept_variables`) and a keeper that disagrees with the config now in force is
+refused rather than counted complete — including on `SEED`, so redrawing the
+campaign from a new realization names the runs to redo instead of silently
+keeping the old pictures. A pre-stripper full run sitting under the keeper's
+name is caught by the missing `kept_variables`. The runs want the machine to
+themselves.
 
 ## Dependencies
 

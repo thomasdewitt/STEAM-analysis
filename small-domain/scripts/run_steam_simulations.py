@@ -1,34 +1,51 @@
 #!/usr/bin/env python3
 """A small, finely resolved STEAM domain for visualization.
 
-One run per flux amplitude, on the same ukmo_ra1t profile the square campaign
-uses: a 40.96 x 20.48 km parent at dx = 20 m from the surface to 5 km, outer
-scale L = 40 960 m (the full long dimension), with a centered 2.56 x 2.56 km
-nest at dx = 5 m carried to full depth. Constant 10 m spheroscale, anchored
-bounds, H_h and lambda at package defaults.
+One run per flux amplitude per spheroscale, each a parent carrying a centered
+nest, with anchored bounds and H_h and lambda at package defaults. This is a
+rendering target, not an analysis product -- the point is a domain fine enough
+to look at closely, and the nest is where that happens.
 
-This is a rendering target, not an analysis product -- the point is a domain
-fine enough to look at closely. The nest is where that happens: its finest
-cascade class is 2 dx = 10 m, exactly the spheroscale, so it resolves the
-cascade down to the isotropic floor and no further.
+SPHEROSCALE is the axis these runs exist to show, and it drags two other knobs
+with it, which is why each case carries its own outer scale rather than
+sharing one.
 
-GRID. The vertical spacing is not free: dz = k_z(2 dx) / 2, so it follows dx
-through the aspect-ratio scaling. The parent is (2048, 1024, 463) at
-dz = 10.80 m -- a 3.62 GiB field, ~38 GiB at the cascade's peak. Doubling dx
-is what makes the wider 2048 x 1024 footprint fit: it halves the level count,
-and the field comes out slightly SMALLER than the 2048 x 768 run at dx = 10 m
-it replaces (3.99 GiB), which is why the preflight that refused
-2048 x 1024 x 681 accepts this. The nest is (512, 512, 1001) at dz = 5.00 m
--- 0.98 GiB, ~10 GiB at its peak; dz stops falling with dx there because
-2 dx has reached the spheroscale and the finest class is isotropic.
+The vertical outer scale k_z,L = l_s (L/l_s)^{H_z} grows with the spheroscale,
+and simulate() refuses any config whose k_z,L reaches the domain top. Raising
+the top instead of shortening L is not the cheap way out: dz = k_z(2 dx)/2 is
+set by dx and by which side of the spheroscale the finest class falls on, so a
+taller domain buys room in levels the cascade then has to carry. The coarser
+spheroscale therefore runs the shorter L and the shallower class ladder, and
+the two pictures differ in cascade depth as well as in spheroscale. That is the
+price of the axis rather than something the runs hide.
+
+RUN_NEST switches the nest on or off. With it off the parent is run without
+refinement state as well, so the file cannot seed a nest later -- turning the
+flag back on means rerunning the parent, and run_nest refuses a parent written
+without it rather than failing deeper in refine().
+
+STRIPPING. Each case runs into a working file and ends as a keeper carrying qc
+and qi alone, for the parent and for the nest, on the square campaign's
+precedent. The working file is tens of GB, most of it the cascade state and the
+per-class increments the nest is cut from, and a picture needs none of it; it
+is deleted once the keeper is written. As with the square campaign's keeper,
+what that costs is the ability to cut a further nest later -- refine() reads
+the increments, and they stay behind with the working file.
+
+Restartable at stage granularity: a keeper with no working file marks a case
+complete, and while the working file exists the parent and the nest are each
+skipped if already present. A keeper that disagrees with the config now in
+force is refused rather than counted complete, so moving a knob mid-campaign
+stops the run instead of leaving a stale picture on disk under a name that
+says otherwise.
 
 Runs are serial and the parent's working set is close enough to the machine's
 limit that they should not be run alongside anything large.
 
-Output: runs/small-domain/small_<set>.nc -- full fields plus diagnostics for
-the parent, and the nest under refinements/r0 with its own diagnostics.
-
-Usage: python run_steam_simulations.py [SET]      (default: all)
+Usage: python run_steam_simulations.py [SET [SPHERO]]
+  no args         -> every amplitude at every spheroscale
+  c005            -> that amplitude, both spheroscales
+  c005 s0010      -> that single run
 """
 
 import sys
@@ -45,6 +62,7 @@ from steam.simulate import simulate, refine
 from steam.thermodynamics import compute_diagnostics, _saturation_mixing_ratio
 from steam.constants import specific_heat_dry_air as cp
 from steam.constants import latent_heat_vaporization as Lv
+from steam.output import compression_kwargs
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # small-domain/
@@ -52,29 +70,85 @@ REPO = BASE.parent
 RUNS = REPO / "runs" / "small-domain"
 PROFILES = REPO / "runs" / "input_profiles"
 
-PROFILE_HOST = "ukmo_ra1t"          # the square campaign's profile
+PROFILE_HOST = "cm1"      
 SETS = {"c002": 0.02, "c005": 0.05, "c017": 0.17}
 
-NX, NY = 2048, 1024
+# spheroscale tag -> (l_s [m], outer scale [m]). The tag is the spheroscale in
+# metres, zero-padded to four digits. Each case carries its own L because a
+# single L cannot serve both; see the module docstring. Order is free now that
+# every run shares SEED -- nothing is derived from position in this dict.
+SPHEROSCALES = {
+    "s0010": (10.0, 40960.0),
+    "s1000": (1000.0, 10240.0),
+}
+
+NX, NY = 2048, 512
 DX = 20.0
-OUTER_SCALE = 40960.0               # the full long dimension
-SPHEROSCALE_CONSTANT = 10.0
-DOMAIN_HEIGHT = 5000.0
+# NX, NY = 2048/4, 512/4
+# DX = 80.0
+DOMAIN_HEIGHT = 5500.0
 PROFILE_DZ = 50.0
 DEVICE = "cuda"
 
-# Centered nest: 512 x 512 cells at dx = 5 m (2.56 x 2.56 km), full depth.
-# 2560 m spans 128 parent cells at dx = 20 m, so the window is the middle 128
-# of 2048 in x and of 1024 in y.
+SEED = 7002
+
+
+RUN_NEST = True
+
+# Centered nest: 2:1 aspect
 NEST_NX = 512
-NEST_DX = 5.0
-_NEST_PARENT_CELLS = int(NEST_NX * NEST_DX / DX)        # 128
-NEST = dict(x_start=(NX - _NEST_PARENT_CELLS) // 2,
-            x_stop=(NX + _NEST_PARENT_CELLS) // 2,
-            y_start=(NY - _NEST_PARENT_CELLS) // 2,
-            y_stop=(NY + _NEST_PARENT_CELLS) // 2,
+NEST_DX = 5
+_NEST_PARENT_CELLS = int(NEST_NX * NEST_DX / DX) 
+NEST = dict(x_start=(NX - _NEST_PARENT_CELLS) ,
+            x_stop=(NX + _NEST_PARENT_CELLS),
+            y_start=(NY - _NEST_PARENT_CELLS) //2,
+            y_stop=(NY + _NEST_PARENT_CELLS) //2,
             dx=NEST_DX, dy=NEST_DX)
 NEST_GROUP = "refinements/r0"
+
+# What the keeper carries, as in fractal-analysis/. The aux names are copied
+# where present, so a group without one (p_bottom, on a nest that starts at the
+# surface) is not an error.
+KEEP_VARS = ("qc", "qi")
+KEEP_AUX = ("x", "y", "z", "z_profile", "dz", "spheroscale", "p_bottom")
+KEEP = (*KEEP_AUX, *KEEP_VARS)
+
+
+def working_path(set_tag, sphero_tag):
+    return RUNS / f"work_small_{set_tag}_{sphero_tag}.nc"
+
+
+def keeper_path(set_tag, sphero_tag):
+    return RUNS / f"small_{set_tag}_{sphero_tag}.nc"
+
+
+def config_spec(set_tag, sphero_tag):
+    """The run attributes a keeper must match to be this case's picture.
+
+    Everything here is recorded by simulate() itself except spheroscale, which
+    it writes as a profile variable rather than an attribute; write_keeper puts
+    the constant on the root so the comparison stays a scalar one.
+    """
+    sphero_m, outer_scale = SPHEROSCALES[sphero_tag]
+    return {"nx": NX, "ny": NY, "dx": DX, "outer_scale": outer_scale,
+            "domain_height": DOMAIN_HEIGHT, "seed": SEED,
+            "flux_noise_scale": SETS[set_tag],
+            "spheroscale_constant": sphero_m}
+
+
+def spec_mismatches(ds, set_tag, sphero_tag):
+    """Attributes of an existing keeper that disagree with the config."""
+    bad = {}
+    for attr, want in config_spec(set_tag, sphero_tag).items():
+        got = getattr(ds, attr, None)
+        if got is None or abs(float(got) - want) > 1e-9 * max(1.0, abs(want)):
+            bad[attr] = ("missing" if got is None else f"{float(got):g}", want)
+    for attr, want in (("profile_host", PROFILE_HOST),
+                       ("run_nest", int(RUN_NEST))):
+        got = getattr(ds, attr, None)
+        if got is None or type(want)(got) != want:
+            bad[attr] = ("missing" if got is None else str(got), want)
+    return bad
 
 
 def run_nest(out_nc):
@@ -82,9 +156,15 @@ def run_nest(out_nc):
     with netCDF4.Dataset(out_nc) as ds:
         exists = ("refinements" in ds.groups
                   and "r0" in ds.groups["refinements"].groups)
+        refinable = "flux_state" in ds.variables
     if exists:
         print(f"  nest exists in {out_nc.name}, skipping", flush=True)
         return
+    if not refinable:
+        raise RuntimeError(
+            f"{out_nc.name} carries no refinement state, so it was written "
+            f"with RUN_NEST = False. Delete it and rerun the parent rather "
+            f"than reporting a nest this file cannot produce.")
     print(f"  nest {NEST_NX} x {NEST_NX} at dx = {NEST_DX:.0f} m "
           f"({NEST_NX * NEST_DX / 1000:.2f} km square), parent cells "
           f"x {NEST['x_start']}:{NEST['x_stop']}, "
@@ -96,15 +176,16 @@ def run_nest(out_nc):
     print(f"  nest done in {time.perf_counter() - t0:.0f} s", flush=True)
 
 
-def run_parent(set_tag, out_nc):
+def run_parent(set_tag, sphero_tag, out_nc):
     if out_nc.exists():
         print(f"{out_nc.name} exists, skipping the parent", flush=True)
         return
 
+    sphero_m, outer_scale = SPHEROSCALES[sphero_tag]
     src = np.load(PROFILES / f"{PROFILE_HOST}.npz")
     h_profile = src["h_profile"]
     qt_profile = src["qt_profile"]
-    spheroscale = np.full(src["z_profile"].size, SPHEROSCALE_CONSTANT)
+    spheroscale = np.full(src["z_profile"].size, sphero_m)
     surface_pressure = float(src["surface_pressure"])
     qt_sat_surface = float(_saturation_mixing_ratio(300.0, surface_pressure))
     # Anchored bounds, as the square campaign sets them.
@@ -113,43 +194,130 @@ def run_parent(set_tag, out_nc):
     h_lower = float(h_profile.min()) - 10.0 * cp
 
     _steam_simulate.FLUX_SCALE = SETS[set_tag]
-    print(f"=== {set_tag} === {NX} x {NY} at dx = {DX:.0f} m "
+    print(f"=== {set_tag} {sphero_tag} === {NX} x {NY} at dx = {DX:.0f} m "
           f"({NX * DX / 1000:.2f} x {NY * DX / 1000:.2f} km), "
-          f"top {DOMAIN_HEIGHT / 1000:.0f} km, L = {OUTER_SCALE / 1000:.2f} km, "
-          f"c = {SETS[set_tag]}", flush=True)
+          f"top {DOMAIN_HEIGHT / 1000:.0f} km, L = {outer_scale / 1000:.2f} km, "
+          f"l_s = {sphero_m:.0f} m, c = {SETS[set_tag]}, "
+          f"nest {'on' if RUN_NEST else 'off'}", flush=True)
 
     RUNS.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
     simulate(
         h_profile, qt_profile,
         nx=NX, ny=NY, dx=DX, dy=DX,
-        outer_scale=OUTER_SCALE,
+        outer_scale=outer_scale,
         spheroscale=spheroscale,
         anisotropy="piecewise_isotropic_below_spheroscale",
         domain_height=DOMAIN_HEIGHT,
         profile_dz=PROFILE_DZ,
         output_path=str(out_nc),
         surface_pressure=surface_pressure,
-        seed=7000 + list(SETS).index(set_tag),
+        seed=SEED,
         h_min=h_lower, h_max=h_upper,
         qt_min=0.0, qt_max=qt_sat_surface,
         compress=True,
         device=DEVICE,
-        save_for_refinement=True,
+        save_for_refinement=RUN_NEST,
     )
     compute_diagnostics(str(out_nc), compress=True, device=DEVICE)
     print(f"{out_nc.name} parent done in {time.perf_counter() - t0:.0f} s "
           f"({out_nc.stat().st_size / 1e9:.1f} GB)", flush=True)
 
 
+def copy_group(src, dst):
+    """Copy one group's KEEP variables, with its attributes and dimensions."""
+    dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
+    names = [n for n in KEEP if n in src.variables]
+    dims_needed = {d for n in names for d in src.variables[n].dimensions}
+    for name, dim in src.dimensions.items():
+        if name in dims_needed:
+            dst.createDimension(name, None if dim.isunlimited() else len(dim))
+    for name in names:
+        var = src.variables[name]
+        chunks = var.chunking()
+        chunks = None if chunks == "contiguous" else chunks
+        out = dst.createVariable(
+            name, var.dtype, var.dimensions, chunksizes=chunks,
+            **compression_kwargs(True, chunks or var.shape))
+        out.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
+        if var.ndim == 3:                       # copy big fields in slabs
+            step = max(1, var.shape[0] // 8)
+            for i0 in range(0, var.shape[0], step):
+                out[i0:i0 + step] = var[i0:i0 + step]
+        else:
+            out[...] = var[...]
+
+
+def write_keeper(out_nc, out_keep, sphero_tag):
+    if out_keep.exists():
+        print(f"{out_keep.name} exists, skipping", flush=True)
+        return
+    tmp = out_keep.with_suffix(".nc.tmp")
+    with netCDF4.Dataset(out_nc) as src, netCDF4.Dataset(tmp, "w") as dst:
+        dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
+        dst.source_parent = out_nc.name
+        # Recorded so a keeper made under other settings is caught rather than
+        # counted complete; see config_spec.
+        dst.profile_host = PROFILE_HOST
+        dst.run_nest = int(RUN_NEST)
+        dst.spheroscale_constant = SPHEROSCALES[sphero_tag][0]
+        dst.kept_variables = " ".join(KEEP_VARS)
+        copy_group(src, dst.createGroup("parent"))
+        if RUN_NEST:
+            grp = src
+            for part in NEST_GROUP.split("/"):
+                grp = grp.groups[part]
+            copy_group(grp, dst.createGroup("nest"))
+    tmp.rename(out_keep)
+    print(f"wrote {out_keep.name} "
+          f"({out_keep.stat().st_size / 1e9:.2f} GB)", flush=True)
+
+
+def complete(out_keep, set_tag, sphero_tag):
+    """True if this keeper is this case's picture; fatal if it is another's."""
+    with netCDF4.Dataset(out_keep) as ds:
+        if not getattr(ds, "kept_variables", ""):
+            raise RuntimeError(
+                f"{out_keep.name} carries no kept_variables attribute, so it "
+                f"is a full pre-stripper run under the keeper's name. Move or "
+                f"delete it rather than passing it off as a stripped keeper.")
+        bad = spec_mismatches(ds, set_tag, sphero_tag)
+    if bad:
+        detail = ", ".join(f"{a} = {got} (this run: {want})"
+                           for a, (got, want) in bad.items())
+        raise RuntimeError(
+            f"{out_keep.name} was made under a different config: {detail}. "
+            f"Move or delete it rather than leaving a stale picture on disk.")
+    return True
+
+
+def run_case(set_tag, sphero_tag):
+    out_nc = working_path(set_tag, sphero_tag)
+    out_keep = keeper_path(set_tag, sphero_tag)
+    if out_keep.exists() and not out_nc.exists():
+        complete(out_keep, set_tag, sphero_tag)
+        print(f"case {set_tag} {sphero_tag} complete, skipping", flush=True)
+        return
+    run_parent(set_tag, sphero_tag, out_nc)
+    if RUN_NEST:
+        run_nest(out_nc)
+    write_keeper(out_nc, out_keep, sphero_tag)
+    out_nc.unlink()
+    print(f"deleted {out_nc.name}", flush=True)
+
+
 def main():
-    tags = sys.argv[1:] or list(SETS)
+    args = sys.argv[1:]
+    tags = [args[0]] if args else list(SETS)
+    spheros = [args[1]] if len(args) > 1 else list(SPHEROSCALES)
     for tag in tags:
         if tag not in SETS:
             raise SystemExit(f"unknown set {tag!r} (have {list(SETS)})")
-        out_nc = RUNS / f"small_{tag}.nc"
-        run_parent(tag, out_nc)
-        run_nest(out_nc)
+        for sphero_tag in spheros:
+            if sphero_tag not in SPHEROSCALES:
+                raise SystemExit(f"unknown spheroscale {sphero_tag!r} "
+                                 f"(have {list(SPHEROSCALES)})")
+            run_case(tag, sphero_tag)
     print("small-domain generation complete", flush=True)
 
 

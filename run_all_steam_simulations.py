@@ -11,9 +11,10 @@ rather than after the square campaign has run:
   1. hydrodynamic-comparison -- the host-matched channel and square runs
   2. fractal-analysis        -- the square campaign (the longest overall: two
                                sets of ten members, each with two nests)
-  3. small-domain            -- two nested visualization runs, the most
-                               expensive per simulation and the only ones
-                               that want the machine to themselves
+  3. small-domain            -- the nested visualization runs, one per flux
+                               amplitude per spheroscale, the most expensive
+                               per simulation and the only ones that want the
+                               machine to themselves
 
 Every campaign skips work already on disk, so a rerun after an interruption
 resumes rather than starting over. Nothing here parallelizes: each campaign's
