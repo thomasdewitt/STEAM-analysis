@@ -142,11 +142,18 @@ each other, nor the two cases.
 
 Two resolution conventions, deliberately different:
 
-- **Profiles and PDFs** (`compute_{gigales,rcemip}_stats.py`) are matched. The
-  hosts are block-averaged 2x2 horizontally onto STEAM's spacing, and per
-  level whichever field is finer vertically is averaged by the nearest
-  integer factor that closes the gap — so the factor varies with height, and
-  points at STEAM in some places and at the host in others.
+- **Profiles and PDFs** (`compute_{gigales,rcemip}_stats.py`) are matched, in
+  two steps. First the host is coarsened in **2x2x2 blocks** — vertically as
+  well as horizontally — before any one-point statistic is taken, to keep the
+  standard deviations off its own grid scale where numerical artifacts live
+  (`main.tex`, one-point statistics). `common.coarsen_xyz` does it, and takes
+  any rank so a field and its own z coordinate cannot end up on different
+  grids; cells that do not fill a block are dropped from the end of each
+  axis, which costs TWPICE its odd 255th level. Then STEAM is matched to
+  *that* grid per level, whichever field is locally finer averaged by the
+  nearest integer factor that closes the gap. Coarsening the host vertically
+  moved the gigaLES STEAM factor from 1–4 to 3–7 and halved the comparison
+  levels, 223 to 112.
 - **Scaling functions** (`compute_scaling.py`) are at native resolution on
   both sides. Matching resolutions there would destroy the thing being
   measured; the curves simply start at different smallest lags.

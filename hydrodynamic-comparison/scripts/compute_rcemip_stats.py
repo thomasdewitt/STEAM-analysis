@@ -20,17 +20,22 @@ levels and produce the same z_levels and the same coarsening factors. That
 is asserted against the runs rather than assumed -- an L case whose z axis
 disagrees is refused, not silently matched on the first one's grid.
 
-MATCHING is the standing rule, from common.py. Horizontally the hosts are
-block-averaged onto STEAM's spacing -- 2x2, 3 km -> 6 km as the runs
-currently stand, the factor taken from each run's own dx attribute rather
-than written down here.
+MATCHING, in two steps (2026-08-10), the standing rule from common.py.
 
-Vertically the hosts are on the stretched RCEMIP grid -- 75 m at the surface,
-~270 m by 1 km, then 500 m through the free troposphere (250 m for the three
-UKMO runs on their 98-level grid) -- against STEAM's uniform 257 m. So the
-rule points both ways here: near the surface the host is the finer field and
-gets averaged, aloft STEAM is finer and gets averaged, and around 1 km and
-for UKMO throughout the two already agree and neither moves.
+FIRST the hosts are coarsened in 2 x 2 x 2 blocks -- vertically as well as
+horizontally -- before any one-point statistic is taken, to keep the
+standard deviations off the host's own grid scale where numerical artifacts
+live (main.tex, one-point statistics). Horizontally that is 3 km -> 6 km,
+STEAM's spacing, the factor taken from each run's own dx attribute rather
+than written down here. Vertically it halves the level count.
+
+THEN STEAM is matched to that grid per level: whichever field is locally
+finer is block-averaged by the nearest integer factor bringing the two
+spacings closest together. Before the hosts were coarsened vertically the
+rule pointed both ways -- the host finer near the surface, STEAM finer
+aloft. Coarsening the host doubles its spacing everywhere, so the balance
+shifts toward STEAM doing the averaging; the factors used are saved per
+level rather than asserted here, since they follow from the two grids.
 
 Host fields come from the make_input_profiles.py adapters, so the
 conventions match the profiles that drove the runs: mixing ratios rather
@@ -65,7 +70,7 @@ from steam.constants import (
     gravity as g,
 )
 
-from common import (VARS, CLOUD_KGKG, coarsen_factor, coarsen_xy,
+from common import (VARS, CLOUD_KGKG, coarsen_factor, coarsen_xyz,
                     level_planes, match_factors, pdf_slices, reduce_source)
 
 HERE = Path(__file__).resolve().parent
@@ -88,13 +93,20 @@ SNAPSHOTS = (0, 1, 2)
 
 
 def host_fields(host, snapshot, xy_coarsen):
-    """Host h, qt, qc, qi on STEAM's grid at one snapshot, and its z."""
+    """Host h, qt, qc, qi on STEAM's grid at one snapshot, and its z.
+
+    Coarsened in f x f x f blocks, vertically as well as horizontally, and
+    the z axis with them so the fields and their own coordinate stay on one
+    grid. h is formed at native resolution and coarsened after, which is
+    the same number either way -- it is linear in T, z and qv.
+    """
     z, T, qv, qc, qi, _ = ADAPTERS[host](snapshot)
     z = np.asarray(z, dtype=np.float64)
     h = cp * T.astype(np.float64) + g * z[:, None, None] + Lv * qv
     qt = qv + qc + qi
     fields = {"h": h, "qt": qt, "qc": qc, "qi": qi}
-    coarse = {k: coarsen_xy(v, xy_coarsen) for k, v in fields.items()}
+    coarse = {k: coarsen_xyz(v, xy_coarsen) for k, v in fields.items()}
+    z = coarsen_xyz(z, xy_coarsen)
     print(f"  {host} host {T.shape} -> {coarse['h'].shape}", flush=True)
     # z last, to match STEAM's layout for the level reductions.
     return z, {k: np.moveaxis(v, 0, -1) for k, v in coarse.items()}

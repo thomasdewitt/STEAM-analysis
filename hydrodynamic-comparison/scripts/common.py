@@ -87,11 +87,33 @@ def style(ax, panel, xlabel, ylabel):
         lbl.set_color(INK)
 
 
-def coarsen_xy(a, f):
-    """Block-mean over the two trailing axes by a factor f, in float64."""
-    nz, ny, nx = a.shape
-    return a.reshape(nz, ny // f, f, nx // f, f).mean(axis=(2, 4),
-                                                      dtype=np.float64)
+def coarsen_xyz(a, f):
+    """Block-mean by f along EVERY axis, in float64.
+
+    The hydrodynamic outputs are coarsened in f x f x f blocks before any
+    one-point statistic is taken, to keep the standard deviations off the
+    host's own grid scale where numerical artifacts live (main.tex, one-point
+    statistics). Until 2026-08-10 only the two horizontal axes were
+    coarsened.
+
+    Takes any rank, so the same call coarsens a (z, y, x) field and the (z,)
+    coordinate that indexes it. That is the point of one function rather than
+    a horizontal one and a vertical one: a field and its own axis cannot end
+    up on different grids.
+
+    Cells that do not fill a whole block are dropped from the end of each
+    axis. TWPICE has 255 levels, so its topmost level goes; it sits above
+    19.8 km and outside the clip to STEAM's top in any case, and half a
+    block would be a level of a different thickness inside a rule that
+    claims uniform blocks.
+    """
+    a = np.asarray(a)
+    trimmed = a[tuple(slice(0, (n // f) * f) for n in a.shape)]
+    blocked = []
+    for n in trimmed.shape:
+        blocked += [n // f, f]
+    return trimmed.reshape(blocked).mean(
+        axis=tuple(range(1, 2 * a.ndim, 2)), dtype=np.float64)
 
 
 def coarsen_factor(steam_dx, host_dx):

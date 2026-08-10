@@ -33,21 +33,28 @@ combined condensate QN, so its liquid/ice split is reconstructed with SAM's
 own linear ramp (all liquid at 0 C, all ice at -38 C) BEFORE any coarsening,
 since the ramp is nonlinear in temperature and would not commute with it.
 
-MATCHING. Horizontally the host is block-averaged onto STEAM's own spacing
--- 2x2, 100 m -> 200 m as the runs currently stand, putting both on
-1024 x 1024 over the same 204.8 km. The factor is computed from the run's dx
-attribute, not written down here, so it follows the domain rather than
-outliving it.
+MATCHING, in two steps (2026-08-10).
 
-Vertically neither grid is free to move: STEAM's dz follows from dx through
-the aspect-ratio scaling (38.8 m here) and the host's is stretched, 50 m near
-the surface through 100 m across the free troposphere. So the standing rule is
-applied per level: at each host level, whichever field is finer is block-
-averaged by the nearest integer factor that brings the two spacings closest
-together. For TWPICE the host is coarser everywhere, so in practice STEAM is
-averaged over 1 level low down and 3 through the free troposphere, and the
-residual mismatch stays within about 1.3x. The factor used at every level is
-saved so the figure can state it.
+FIRST the host is coarsened in 2 x 2 x 2 blocks -- vertically as well as
+horizontally -- before any one-point statistic is taken, to keep the
+standard deviations off its own grid scale where numerical artifacts live
+(main.tex, one-point statistics). Horizontally that is 100 m -> 200 m,
+which is STEAM's spacing because the runs are generated at twice the host's
+dx; the factor is computed from the run's own dx attribute rather than
+written down, so it follows the domain. Vertically it halves the level
+count, 255 -> 127 for TWPICE and 256 -> 128 for GATE, with TWPICE's odd
+topmost level dropped.
+
+THEN STEAM is matched to THAT grid by the standing per-level rule: at each
+(coarsened) host level, whichever field is finer is block-averaged by the
+nearest integer factor bringing the two spacings closest together. The host
+is now coarser everywhere, so all the averaging falls on STEAM, over 3
+levels near the surface rising to 7 aloft -- against 1 to 4 before the host
+was coarsened vertically. The factor used at every level is saved so the
+figure can state it.
+
+Comparison levels are the coarsened host's own, clipped to STEAM's top:
+112 of them, where the native grid gave 223.
 
 Cloud fraction is the fraction of cells holding at least 0.01 g/kg of
 condensate, thresholded AFTER coarsening -- the coarsened cell value is what
@@ -76,8 +83,8 @@ from steam.constants import (
     gravity as g,
 )
 
-from common import (VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_factor, coarsen_xy,
-                    match_factors, reduce_source)
+from common import (VARS, CLOUD_KGKG, PDF_LEVELS, coarsen_factor,
+                    coarsen_xyz, match_factors, reduce_source)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -112,13 +119,13 @@ def twpice_fields(xy_coarsen):
     (the standing gotcha), and doing it on read rather than at each reduction
     means a reduction added later cannot reintroduce the problem.
     """
-    z = np.asarray(read_var(HOST / f"TWPICE_LPT_3D_QV_{SNAPSHOT}.nc", "z"),
-                   dtype=np.float64)
+    z = coarsen_xyz(read_var(HOST / f"TWPICE_LPT_3D_QV_{SNAPSHOT}.nc", "z"),
+                    xy_coarsen)
 
     def load(name, y_first, scale):
         a = _twpice_field(HOST / f"TWPICE_LPT_3D_{name}_{SNAPSHOT}.nc",
                           name, y_first).astype(np.float64)
-        c = coarsen_xy(a, xy_coarsen)
+        c = coarsen_xyz(a, xy_coarsen)
         del a
         print(f"  {name} -> {c.shape}", flush=True)
         return c * scale
@@ -145,16 +152,20 @@ def gate_fields(xy_coarsen):
     path = REPO / "data" / "gate" / GATE_FILE
     with netCDF4.Dataset(path) as ds:
         ds.set_auto_mask(False)
-        z = np.asarray(ds.variables["z"][:], dtype=np.float64)
+        # Coarsened with the fields, so the gz term below is formed on the
+        # grid the fields are on. h is linear in T, z and qv, so building it
+        # after the block mean equals block-averaging an h built before.
+        z = coarsen_xyz(np.asarray(ds.variables["z"][:], dtype=np.float64),
+                        xy_coarsen)
         T = np.asarray(ds.variables["TABS"][0], dtype=np.float64)
         liquid = liquid_fraction(T).astype(np.float32)
-        Tc = coarsen_xy(T, xy_coarsen)
+        Tc = coarsen_xyz(T, xy_coarsen)
         del T
         qn = np.asarray(ds.variables["QN"][0], dtype=np.float64) * 1e-3
-        qc = coarsen_xy(qn * liquid, xy_coarsen)
-        qi = coarsen_xy(qn * (1.0 - liquid), xy_coarsen)
+        qc = coarsen_xyz(qn * liquid, xy_coarsen)
+        qi = coarsen_xyz(qn * (1.0 - liquid), xy_coarsen)
         del qn, liquid
-        qv = coarsen_xy(np.asarray(ds.variables["QV"][0], dtype=np.float64)
+        qv = coarsen_xyz(np.asarray(ds.variables["QV"][0], dtype=np.float64)
                         * 1e-3, xy_coarsen)
     h = cp * Tc + g * z[:, None, None] + Lv * qv
     qt = qv + qc + qi
@@ -269,13 +280,19 @@ def reduce_ensemble(case, set_tag, z_levels, factors, out):
 HOST_LOADER = {"twpice": twpice_fields, "gate": gate_fields}
 
 
-def host_z(case):
-    """The host's own z axis, read without touching the 3-D fields."""
+def host_z(case, xy_coarsen):
+    """The host's COARSENED z axis, read without touching the 3-D fields.
+
+    Coarsened by the same factor as the loaders apply, because this is what
+    fixes the comparison levels: if it were the native axis, the levels
+    would be asked of a field that no longer has them.
+    """
     if case == "twpice":
         path = HOST / f"TWPICE_LPT_3D_QV_{SNAPSHOT}.nc"
     else:
         path = REPO / "data" / "gate" / GATE_FILE
-    return np.asarray(read_var(path, "z"), dtype=np.float64)
+    return coarsen_xyz(np.asarray(read_var(path, "z"), dtype=np.float64),
+                       xy_coarsen)
 
 
 def do_case(case, out):
@@ -287,7 +304,7 @@ def do_case(case, out):
         z_steam0 = ds.variables["z"][:].astype(np.float64)
         steam_dx = float(ds.dx)
     xy_coarsen = coarsen_factor(steam_dx, HOST_DX)
-    z_h = host_z(case)
+    z_h = host_z(case, xy_coarsen)
     z_levels = z_h[z_h <= z_steam0[-1]]
     n_steam, n_host = match_factors(z_levels, z_steam0)
     out[f"{case}_z"] = z_levels
