@@ -13,12 +13,20 @@ T AND p JOINED THE PROFILE FIGURE ON 2026-08-10, drawn exactly like the four
 that were already there, and on the profiles only.
 
 NEITHER SAM CASE HAS A HOST PRESSURE to draw. Both archive a 1-D reference
-p(z), which has no horizontal variance, and a PP that is the anelastic
-dynamic pressure perturbation rather than the thermodynamic pressure STEAM
-computes. So the pressure panel carries the STEAM curves and the run
-envelope alone; the panel title says so, and no host line is faked to fill
-it. Which variables the host reported is read off the npz rather than
-written down here -- compute_gigales_stats.py is what looked.
+p(z), horizontally constant, plus PP, the anelastic pressure perturbation.
+p_bar + PP was measured against the hydrostatic march STEAM actually builds
+and is the same order but only weakly correlated with it (0.2-0.5 over most
+of the column) -- the numbers are in compute_gigales_stats.py's docstring.
+So the pressure panel carries the STEAM curves and the run envelope alone;
+the panel title says so, and no host line is faked to fill it. Which
+variables the host reported is read off the npz rather than written down
+here -- compute_gigales_stats.py is what looked.
+
+READ PANEL d WITH ITS LOWER BOUNDARY IN MIND: STEAM marches every column
+from the SAME surface pressure, so its std(p) is identically zero at the
+bottom and can only accumulate upward. That is construction, not physics,
+and it applies to the RCEMIP pressure panel too, where the hosts carry
+~40 Pa of surface pressure variance against STEAM's nought.
 
 BOTH LAYERS OF THE ENSEMBLE ARE ON THE PROFILE FIGURE, and they say
 different things. Each coloured line is the POOLED statistic for one case

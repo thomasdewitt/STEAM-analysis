@@ -27,12 +27,36 @@ On the HOST side T is available for both cases and p for NEITHER:
            is for every RCEMIP host, and h stays what SAM archived rather
            than becoming a function of the T beside it.
   gate     archives TABS directly.
-  both     archive a one-dimensional reference p(z), which has no horizontal
-           variance at all, and a PP that is the anelastic DYNAMIC pressure
-           perturbation -- a different quantity from the thermodynamic
-           pressure STEAM computes, not a coarser version of it. So there is
-           no host pressure std to compare against, and none is invented; the
-           pressure panel carries the STEAM curves alone and says so.
+  both     archive a one-dimensional reference p(z) -- the pressure SAM's own
+           thermodynamics uses, and horizontally constant, so its std is zero
+           by construction -- plus PP, the anelastic pressure perturbation
+           solved from the elliptic constraint.
+
+           p_bar + PP is the only candidate host pressure, and it was measured
+           against the quantity STEAM actually builds before being rejected:
+           a hydrostatic march on GATE's OWN T and qv from a uniform surface
+           pressure, at this resolution (2026-08-10, scratch probe).
+
+               z        std(PP)   std(hydrostatic)   ratio   corr
+               150 m     6.6 Pa        1.7 Pa         0.26   -0.41
+               2.8 km    5.2 Pa        9.5 Pa         1.84    0.65
+               9.6 km    2.5 Pa        7.9 Pa         3.16    0.24
+               19.4 km   1.6 Pa        2.4 Pa         1.49    0.72
+
+           They are the SAME ORDER -- within 1.5-3.6x -- so the objection is
+           not one of magnitude. It is that they are weakly correlated, 0.16
+           to 0.72 and mostly 0.2-0.5: the same size, but not the same field.
+           PP is constrained by the anelastic solve; the hydrostatic march
+           accumulates the column's own Tv anomaly over the whole depth.
+
+           So no host pressure std is written, and none is invented. The
+           panel carries the STEAM curves alone and says so.
+
+           WORTH KNOWING IF THIS IS REVISITED: that march is constructible
+           from any host's T and qv, including the four that archive no 3-D
+           pressure, and would be like-for-like with STEAM by construction.
+           Adopting it would be a methodological ruling -- a diagnostic built
+           rather than a field read -- and has not been made.
 
 POOLING, and where it stops (2026-08-10). The STEAM side is five members
 per amplitude, and what is reported per level is the statistic of the

@@ -19,6 +19,15 @@ compare seven models' spread against twenty-seven STEAM runs driven by nine,
 which is not the comparison the panel claims. The panel is labelled with its
 own host count and the omission is printed at run time.
 
+AND IT IS NOT LIKE-FOR-LIKE AT THE BOTTOM. The hosts report their own full
+pressure, surface variability included -- ~40 Pa of it at the lowest levels.
+STEAM marches every column from ONE surface pressure, so its std(p) is
+identically zero there and can only accumulate upward. The low-level
+non-overlap in that panel is that boundary condition, not a result. What is
+a result is aloft, where STEAM reaches ~400 Pa against the hosts' ~20-50 --
+and even that is largely the std(T) excess in panel c integrated up the
+column rather than an independent measurement.
+
 ONE FIGURE PER OUTER SCALE (2026-08-08), so each stem carries the tag:
 rcemip_profiles_Llong, rcemip_profiles_Lshort, and likewise for the PDFs.
 L is set to the channel's long axis (6144 km) or its short one (384 km),
