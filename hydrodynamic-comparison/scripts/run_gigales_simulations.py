@@ -17,11 +17,19 @@ compute_ensemble_stats.py.
 WHAT IS KEPT, and why not everything. A full run is 9.06 GB, so thirty of
 them would be 272 GB against roughly 360 GB free -- and 544 GB at the ten
 members first planned, which is what set the size at five. Eight 3-D fields
-are written but the profile figures read four: h, qt, qc, qi. Dropping
-flux, T, qv and p is half the file and brings a member to ~4.3 GB, so the
-ensemble lands near 129 GB. The dropped fields are diagnostics of the kept
-ones and compute_diagnostics regenerates them from a rerun if they are ever
-wanted.
+are written; six are kept. The figures read h, qt, qc and qi; T and p are
+kept for analysis not yet written (2026-08-10), which is a cheaper bet than
+regenerating thirty members to get them later. Only flux and qv are
+dropped, and compute_diagnostics rebuilds those from a rerun.
+
+Sizes: measured at 2.98 GB a member with the four figure fields, so the
+ensemble was 83 GB on disk. T and p have not been measured -- p is smooth
+and should compress hard, T behaves like h -- so budget roughly 4-4.5 GB a
+member and 130 GB for the thirty.
+
+A keeper written before this list changed does NOT have the newer fields
+and nothing backfills it: the working file it was stripped from is gone.
+Adding a field means regenerating the members that need it.
 
 CHUNKED ONE LEVEL PER CHUNK. compute_ensemble_stats.py reads a horizontal
 level at a time across all five members, and with the default chunking a
@@ -71,7 +79,7 @@ HOSTS = {
 SETS = {"c002": 0.02, "c005": 0.05, "c017": 0.17}
 N_MEMBERS = 5
 
-KEEP = ("h", "qt", "qc", "qi")
+KEEP = ("h", "qt", "qc", "qi", "T", "p")
 SPHEROSCALE_CONSTANT = 10.0
 DOMAIN_HEIGHT = 20000.0
 PROFILE_DZ = 50.0
