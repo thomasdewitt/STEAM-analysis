@@ -22,7 +22,7 @@ cases, 2 x 3 km against 2 x 6 km for the channels -- and where they overlap
 they are measuring the same physical scales. A scaling function is the one
 place where matching resolutions would destroy the thing being measured.
 
-The twpice case covers both SAM LES, TWPICE and GATE, as the profile and PDF
+The gigales case covers both SAM LES, TWPICE and GATE, as the profile and PDF
 figures do; the rcemip case covers the nine channels.
 
 The transform runs along the longer horizontal axis with periodic=True, so
@@ -31,10 +31,15 @@ the shorter axis is pooled as independent realizations in a single call
 different, wrong answer). Lags come back in cells and are converted to
 metres.
 
-All three archived channel snapshots are used: F_1 is computed per snapshot
-and averaged, which at order 1 with equal window counts per snapshot IS the
-pooled mean. (Until 2026-08-06 only the first snapshot was used -- a bug
-against the stated methodology.) TWPICE and GATE have one snapshot each.
+EVERYTHING THAT POOLS IS PASSED IN ONE CALL (2026-08-10). The three
+archived channel snapshots, and the five members of each gigaLES ensemble,
+are stacked onto a trailing axis and handed to the estimator whole, so the
+statistic is over the pooled sample by construction. This used to compute
+F_1 per snapshot and average them, which gives the identical number -- the
+estimator returns a raw moment and the window counts are equal, verified to
+machine precision at orders 0.5 through 3 -- but only while the order stays
+at 1, and nothing at the call site said so. (Until 2026-08-06 only the
+first snapshot was used at all, a bug against the stated methodology.)
 
 The level mean is subtracted before the transform. The Haar kernel is
 zero-mean so this changes nothing analytically, but h is O(3e5) J/kg while
@@ -45,7 +50,7 @@ float64 for the same reason.
 Local slope is the OLS slope of log10 F against log10 r over the half-decade
 window centred on each lag, which is main.tex's definition.
 
-Usage: python compute_scaling.py [case ...]      (default: twpice rcemip)
+Usage: python compute_scaling.py [case ...]      (default: gigales rcemip)
 """
 
 import sys
@@ -73,7 +78,7 @@ OUT = OUTPUT / "scaling_stats.npz"
 sys.path.insert(0, str(REPO))
 from make_input_profiles import ADAPTERS, read_var          # noqa: E402
 
-SETS = ("c005", "c017", "c002")
+SETS = ("c002", "c005", "c017")
 VARS = ("h", "qt")
 LEVELS = (5000.0, 10000.0)
 SNAPSHOT = "0000003450"
@@ -81,24 +86,41 @@ HALF_DECADE = 0.25          # +/- this many dex about each lag
 
 GATE_FILE = "GATE_IDEAL_S_2048x2048x256_100m_2s_2048_0000041400.nc"   # 23 h
 
-# case -> (hosts, host dx [m], outer-scale cases). STEAM's dx and its realized
-# L are not listed: both are read from each run's own attributes, so changing
-# a domain in run_steam_simulations.py does not leave a stale number here.
-# The square SAM domains have one outer-scale case, the channels two.
+# case -> (hosts, host dx [m], outer-scale cases, STEAM members per config).
+# STEAM's dx and its realized L are not listed: both are read from each run's
+# own attributes, so changing a domain in run_rcemip_simulations.py does not
+# leave a stale number here.
+# The gigaLES hosts carry a five-member realization ensemble; the channels
+# are one run each. Their outer-scale axis is degenerate -- the domains are
+# square, so L is the extent either way -- but the tag stays in the source
+# names so both cases key the same way.
 CASES = {
-    "twpice": (("twpice", "gate"), 100.0, ("Llong",)),
+    "gigales": (("twpice", "gate"), 100.0, ("Llong",), 5),
     "rcemip": (("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
                 "scale", "ucla", "icon_lem", "icon_nwp"), 3000.0,
-               ("Llong", "Lshort")),
+               ("Llong", "Lshort"), 1),
 }
 
 si.set_numerical_precision("float64")
 
 
-def haar(field2d, dx):
-    """Order-1 Haar fluctuation along the longer axis, lags in metres."""
-    axis = int(np.argmax(field2d.shape))
-    lags, F = si.haar_fluctuation(field2d - field2d.mean(), order=1.0,
+def haar(field, dx, axis=None):
+    """Order-1 Haar fluctuation along one horizontal axis, lags in metres.
+
+    `field` may carry axes beyond the two horizontal ones -- a member axis
+    for the gigaLES ensembles -- and every axis that is not the transform
+    axis is pooled as independent realizations inside the single call. That
+    is exactly what pooling means here, and it is why the whole ensemble is
+    handed over at once rather than looped: these estimators are not linear,
+    so a per-member loop and an average is a different quantity.
+
+    The axis is passed explicitly where there is a member axis. Defaulting
+    to the longest is right for a bare 2-D channel field, but with five
+    members stacked it is right only by accident of 1024 > 5.
+    """
+    if axis is None:
+        axis = int(np.argmax(field.shape))
+    lags, F = si.haar_fluctuation(field - field.mean(), order=1.0,
                                   axis=axis, periodic=True)
     return np.asarray(lags, float) * dx, np.asarray(F, float)
 
@@ -182,26 +204,45 @@ def host_levels(host, z_target):
     return per_snapshot, z_used
 
 
-def steam_level(host, set_tag, lscale, z_target):
-    """STEAM h and qt at the level nearest z_target, with the run's own dx.
+def steam_levels(host, set_tag, lscale, z_target, n_members):
+    """STEAM h and qt at the level nearest z_target, one dict per member.
 
-    dx and the realized outer scale come from the file rather than from a
-    table here, so a run regenerated on a different domain is measured on the
-    grid it actually has.
+    Returns a list so the caller treats an ensemble and a single run the
+    same way -- the whole list is stacked and handed to the estimator in one
+    call, which is what pooling over realizations means here.
+
+    dx and the realized outer scale come from the files rather than from a
+    table, so a run regenerated on a different domain is measured on the
+    grid it actually has, and every member is checked to agree.
     """
-    with netCDF4.Dataset(RUNS / f"{host}_{set_tag}_{lscale}.nc") as ds:
-        ds.set_auto_mask(False)
-        z = ds.variables["z"][:].astype(np.float64)
-        k = int(np.argmin(np.abs(z - z_target)))
-        fields = {v: np.asarray(ds.variables[v][:, :, k], np.float64)
-                  for v in VARS}
-        dx = float(ds.dx)
-        outer_scale = float(ds.outer_scale)
-    return fields, float(z[k]), dx, outer_scale
+    if n_members > 1:
+        paths = [RUNS / f"{host}_{set_tag}_m{m:02d}.nc"
+                 for m in range(n_members)]
+    else:
+        paths = [RUNS / f"{host}_{set_tag}_{lscale}.nc"]
+
+    out, z_used, dx, outer_scale = [], None, None, None
+    for path in paths:
+        if not path.exists():
+            raise SystemExit(f"{path.name} not found")
+        with netCDF4.Dataset(path) as ds:
+            ds.set_auto_mask(False)
+            z = ds.variables["z"][:].astype(np.float64)
+            k = int(np.argmin(np.abs(z - z_target)))
+            out.append({v: np.asarray(ds.variables[v][:, :, k], np.float64)
+                        for v in VARS})
+            this = (float(z[k]), float(ds.dx), float(ds.outer_scale))
+        if z_used is None:
+            z_used, dx, outer_scale = this
+        elif this != (z_used, dx, outer_scale):
+            raise SystemExit(
+                f"{path.name}: level {this} disagrees with member 00 "
+                f"{(z_used, dx, outer_scale)}; these cannot be pooled")
+    return out, z_used, dx, outer_scale
 
 
 def do_case(case, out):
-    hosts, host_dx, lscales = CASES[case]
+    hosts, host_dx, lscales, n_members = CASES[case]
     out[f"{case}_hosts"] = np.array(hosts)
     out[f"{case}_lscales"] = np.array(lscales)
     for host in hosts:
@@ -211,8 +252,8 @@ def do_case(case, out):
             sources = [("host", fields_list, z_host, host_dx)]
             for lscale in lscales:
                 for s in SETS:
-                    fields, z_steam, steam_dx, L = steam_level(
-                        host, s, lscale, z_target)
+                    members, z_steam, steam_dx, L = steam_levels(
+                        host, s, lscale, z_target, n_members)
                     # Keyed by case, not by lscale alone: `Llong` means
                     # 6144 km for a channel and 204.8 km for a square SAM
                     # domain, so a single L_<lscale> would be whichever case
@@ -224,17 +265,24 @@ def do_case(case, out):
                             f"disagrees with {out[key]} m from an earlier "
                             f"host; this case is not one geometry")
                     out[key] = L
-                    sources.append((f"{s}_{lscale}", [fields], z_steam,
+                    sources.append((f"{s}_{lscale}", members, z_steam,
                                     steam_dx))
             for name, fields_list, z_used, dx in sources:
                 for v in VARS:
-                    # Mean of the per-snapshot F_1: at order 1 with equal
-                    # window counts per snapshot this is the pooled mean.
-                    Fs = []
-                    for fields in fields_list:
-                        lags, F = haar(fields[v], dx)
-                        Fs.append(F)
-                    F = np.mean(Fs, axis=0)
+                    # Every snapshot or member stacked onto a trailing axis
+                    # and passed in ONE call, so the pooling is over the
+                    # whole sample by construction. This used to compute F_1
+                    # per snapshot and average, which is the same number --
+                    # the estimator returns a raw moment and the window
+                    # counts are equal -- but only while the order stays at
+                    # 1, and nothing said so at the call site.
+                    #
+                    # The transform axis is taken from the 2-D level shape
+                    # before stacking, so it is the long horizontal axis for
+                    # a channel and never the member axis.
+                    axis = int(np.argmax(fields_list[0][v].shape))
+                    stack = np.stack([f[v] for f in fields_list], axis=-1)
+                    lags, F = haar(stack, dx, axis=axis)
                     key = f"{case}_{host}_{v}_{tag}_{name}"
                     out[f"{key}_lags"] = lags
                     out[f"{key}_F"] = F

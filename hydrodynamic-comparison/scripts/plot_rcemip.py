@@ -49,7 +49,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch, Rectangle
 from matplotlib.transforms import blended_transform_factory
 
-from common import VARS, UNITS, INK, COLOR, rcparams, style
+from common import (VARS, UNITS, INK, COLOR, STEAM_BAND, rcparams, style)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -62,12 +62,12 @@ DATA = OUTPUT / "rcemip_stats.npz"
 # reference and keeps the ink; STEAM takes the teal of the pair.
 GROUPS = {
     "host": ("RCEMIP hosts", INK, 0.16),
-    "steam": ("STEAM", COLOR["c005"], 0.28),
+    "steam": ("STEAM", STEAM_BAND, 0.28),
 }
 # The flux amplitudes pooled into the single STEAM band. An envelope is a
 # claim about what varies WITHIN it, so a new axis in the npz has to be
 # answered here rather than swept into the existing band.
-STEAM_SETS = ("c005", "c017", "c002")
+STEAM_SETS = ("c002", "c005", "c017")
 # The outer scale is the axis added on 2026-08-08, and it is answered by
 # SEPARATING rather than pooling: one figure per outer scale, each carrying
 # the STEAM band for that L alone. Pooling the two would have merged the

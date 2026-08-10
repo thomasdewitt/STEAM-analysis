@@ -52,7 +52,8 @@ from matplotlib.patches import Patch
 
 from steam.constants import hurst_horizontal as H_H
 
-from common import UNITS, INK, LABEL, COLOR, rcparams, style
+from common import (UNITS, INK, LABEL, COLOR, STEAM_BAND, by_amplitude,
+                    rcparams, style)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -62,13 +63,13 @@ FIGS = BASE / "figs"
 DATA = OUTPUT / "scaling_stats.npz"
 
 VARS = ("h", "qt")
-NAME = {"twpice": {"host": "LES host"}, "rcemip": {"host": "RCEMIP hosts"}}
+NAME = {"gigales": {"host": "LES host"}, "rcemip": {"host": "RCEMIP hosts"}}
 STEAM_NAME = {"c002": "STEAM  $c=0.02$", "c005": "STEAM  $c=0.05$",
               "c017": "STEAM  $c=0.17$"}
-WIDTH = {"twpice": 1.3, "rcemip": 0.56}
-ALPHA = {"twpice": 1.0, "rcemip": 0.65}
+WIDTH = {"gigales": 1.3, "rcemip": 0.56}
+ALPHA = {"gigales": 1.0, "rcemip": 0.65}
 # The two SAM cases share every panel, told apart by line style as in
-# plot_twpice.py. The channels are unstyled: nine thin lines, one colour.
+# plot_gigales.py. The channels are unstyled: nine thin lines, one colour.
 HOST_NAME = {"twpice": "SAM-TWPICE", "gate": "SAM-GATE"}
 HOST_STYLE = {"twpice": "-", "gate": (0, (4, 2))}
 
@@ -78,11 +79,11 @@ HOST_STYLE = {"twpice": "-", "gate": (0, (4, 2))}
 BANDED = ("rcemip",)
 # group -> (edge colour, fill opacity), as in plot_rcemip.py so the two figure
 # families read as one. Hosts are the reference and keep the ink.
-GROUPS = {"host": (INK, 0.16), "steam": (COLOR["c005"], 0.28)}
+GROUPS = {"host": (INK, 0.16), "steam": (STEAM_BAND, 0.28)}
 # The flux amplitudes pooled into the single STEAM band, and the same refusal
 # plot_rcemip.members() makes: a band is a claim about what varies inside it,
 # so an unfamiliar tag stops the figure rather than joining the band.
-STEAM_SETS = ("c005", "c017", "c002")
+STEAM_SETS = ("c002", "c005", "c017")
 EDGE_LW = 0.9
 
 rcparams()
@@ -235,7 +236,8 @@ def band_handles(case, L_km):
 
 def figure(d, case, lscale):
     hosts = [str(h) for h in d[f"{case}_hosts"]]
-    sources = ("host", *[f"{s}_{lscale}" for s in d["sets"]])
+    sources = ("host", *[f"{s}_{lscale}"
+                         for s in by_amplitude([str(s) for s in d["sets"]])])
     levels = [f"{z / 1000:.0f}km" for z in d["levels"]]
 
     fig, axes = plt.subplots(2, 4, figsize=(10.0, 5.6))

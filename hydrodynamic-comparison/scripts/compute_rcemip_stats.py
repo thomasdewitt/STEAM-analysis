@@ -39,9 +39,13 @@ qt = qv + qc + qi with no precipitating water. T is cast to float64 before
 h is formed -- it is K-scale, where float32 accumulators drift.
 
 All three archived timesteps of each host are used, matching the driving
-profiles: the per-level statistics are averaged over the snapshots, and the
-PDF samples are pooled across them. (Until 2026-08-06 only the first
-snapshot was used -- a bug against the stated methodology.)
+profiles, and every statistic is POOLED across them: the quantity reported
+at a level is the statistic of all three snapshots' cells taken as one
+population, not a combination of the three per-snapshot values. (Until
+2026-08-06 only the first snapshot was used. Until 2026-08-10 the standard
+deviations were the mean of the three per-snapshot standard deviations,
+which is biased low -- it averages standard deviations rather than
+variances, and it cannot see the level mean moving between snapshots.)
 
 MESONH is excluded (documented RCEMIP hus error) and ICON_AES for having no
 usable z, leaving nine.
@@ -61,8 +65,8 @@ from steam.constants import (
     gravity as g,
 )
 
-from common import (VARS, coarsen_factor, coarsen_xy, match_factors,
-                    reduce_source)
+from common import (VARS, CLOUD_KGKG, coarsen_factor, coarsen_xy,
+                    level_planes, match_factors, pdf_slices, reduce_source)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
@@ -77,7 +81,7 @@ from make_input_profiles import ADAPTERS                   # noqa: E402
 
 HOSTS = ("sam", "cm1", "ukmo_casim", "ukmo_ra1t", "ukmo_ra1t_nocloud",
          "scale", "ucla", "icon_lem", "icon_nwp")
-SETS = ("c005", "c017", "c002")
+SETS = ("c002", "c005", "c017")
 LSCALES = ("Llong", "Lshort")
 HOST_DX = 3000.0               # RCE_large300, by protocol
 SNAPSHOTS = (0, 1, 2)
@@ -120,9 +124,16 @@ def do_host(host, out):
     out[f"dx_{host}"] = steam_dx
     out[f"xy_coarsen_{host}"] = xy_coarsen
 
-    # Host side: one snapshot in memory at a time; statistics averaged over
-    # snapshots, PDF slices pooled (stacked -- the histograms flatten them).
-    std_sum, cf_sum, pooled = None, None, {}
+    # Host side: one snapshot's FIELD in memory at a time, but every
+    # snapshot's level planes kept, POOLED across snapshots (2026-08-10).
+    # Only the planes are kept, ~90 MB a snapshot against gigabytes for the
+    # field, which is what makes it possible to hand the whole pooled sample
+    # to numpy in one reduction instead of combining per-snapshot summaries.
+    # Until this date the standard deviations were the mean of the three
+    # per-snapshot values, which is a different and smaller number; the PDF
+    # slices were already pooled by stacking, and cloud fraction happened to
+    # agree because the counts are equal, so only the stds move.
+    planes, pooled = [], {}
     z_levels = n_steam = n_host = None
     for snap in SNAPSHOTS:
         z_host, host_f = host_fields(host, snap, xy_coarsen)
@@ -132,20 +143,22 @@ def do_host(host, out):
             out[f"z_{host}"] = z_levels
             out[f"n_steam_{host}"] = n_steam
             out[f"n_host_{host}"] = n_host
-        std, cf, slices = reduce_source(z_host, host_f, z_levels, n_host)
+        planes.append(level_planes(z_host, host_f, z_levels, n_host))
+        for k, a in pdf_slices(z_host, host_f, z_levels, n_host).items():
+            pooled.setdefault(k, []).append(a)
         del host_f
-        if std_sum is None:
-            std_sum, cf_sum = std, cf
-            pooled = {k: [a] for k, a in slices.items()}
-        else:
-            for v in VARS:
-                std_sum[v] += std[v]
-            cf_sum += cf
-            for k, a in slices.items():
-                pooled[k].append(a)
+
+    # The pooled sample, handed to numpy whole: axis 0 is the snapshot and
+    # axes 2,3 are the horizontal, so reducing over all three is the
+    # statistic of every snapshot's cells at that level as one population.
     for v in VARS:
-        out[f"std_{v}_{host}_host"] = std_sum[v] / len(SNAPSHOTS)
-    out[f"cf_{host}_host"] = cf_sum / len(SNAPSHOTS)
+        stack = np.stack([p[v] for p in planes])       # (snap, lev, ny, nx)
+        out[f"std_{v}_{host}_host"] = stack.std(axis=(0, 2, 3),
+                                                dtype=np.float64)
+    cond = (np.stack([p["qc"] for p in planes])
+            + np.stack([p["qi"] for p in planes]))
+    out[f"cf_{host}_host"] = (cond >= CLOUD_KGKG).mean(axis=(0, 2, 3))
+    del planes, cond
     for k, arrs in pooled.items():
         out[f"pdf_{k}_{host}_host"] = np.stack(arrs)
 

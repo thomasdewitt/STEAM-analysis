@@ -61,8 +61,10 @@ the end.
 
 Each campaign subfolder lays out the same way: `scripts/` for code, `output/`
 for cached statistics, `figs/` for figures and the text tables beside them.
-Every subfolder's run generator is `scripts/run_steam_simulations.py`;
-`run_all_steam_simulations.py` at the repo root calls all three in sequence,
+`fractal-analysis/` and `small-domain/` each have one run generator,
+`scripts/run_steam_simulations.py`; `hydrodynamic-comparison/` has two,
+`run_rcemip_simulations.py` and `run_gigales_simulations.py`.
+`run_all_steam_simulations.py` at the repo root calls them all in sequence,
 cheapest first, skipping whatever is already on disk.
 
 Conventions that matter in step 3: every matched member is passed to objscale
@@ -108,16 +110,39 @@ grouping for, and refuses a figure handed more than one outer scale.
 The RCEMIP profile, PDF and scaling figures all draw two envelopes — the
 min-to-max across hosts and across STEAM runs — rather than one line per
 run, pooling the flux amplitudes into the STEAM band and never the outer
-scale. The twpice figures keep one line per run: two LES cases are not a
+scale. The gigaLES figures keep one line per run: two LES cases are not a
 population. Profiles carry a bar beside each panel, green where the two
 envelopes overlap and red where they are non-overlapping. The scaling
 bands take no interpolation — within a band every run shares dx and
 domain, so the lag axes are identical and the min/max is pointwise, which
 `curves()` checks rather than assumes.
 
+**The gigaLES realization ensemble (2026-08-10).** The two SAM cases moved
+out of the channel generator into `run_gigales_simulations.py`, which runs
+five members per amplitude differing only in seed — thirty runs, kept
+rather than reduced on the way past. A member is stripped to h, qt, qc and
+qi (half the file; the other four 3-D fields are diagnostics of these) and
+chunked one level per chunk, ~3.0 GB each, ~90 GB for the ensemble. The
+chunking matters: the working file holds the whole z column in every chunk,
+so a per-level read there decompresses the entire field, and rechunking is
+what makes the reduction's 20,000 level reads cheap — 0.02 s against 0.38 s
+each.
+
+Pooling convention, and it is not uniform because the quantities differ.
+Per level the five members' planes are stacked into one `(member, y, x)`
+array and reduced whole, so `std` is over member and horizontal axes
+together; the PDF samples are pooled the same way, the histogram flattening
+the member axis. The scaling functions get the whole stack in a single
+`haar_fluctuation` call, along with the channels' three snapshots — the
+estimator pools every axis that is not the transform axis. But the profile
+figure also draws an envelope over the *individual* runs, which is a spread
+and not a pooled quantity, so per-member statistics are carried alongside
+the pooled ones and the two never merge. Amplitudes are never pooled with
+each other, nor the two cases.
+
 Two resolution conventions, deliberately different:
 
-- **Profiles and PDFs** (`compute_{twpice,rcemip}_stats.py`) are matched. The
+- **Profiles and PDFs** (`compute_{gigales,rcemip}_stats.py`) are matched. The
   hosts are block-averaged 2x2 horizontally onto STEAM's spacing, and per
   level whichever field is finer vertically is averaged by the nearest
   integer factor that closes the gap — so the factor varies with height, and

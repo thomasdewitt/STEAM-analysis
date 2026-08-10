@@ -27,12 +27,33 @@ UNITS = {
 INK = "#111111"
 RULE = "#e3e3e3"
 LABEL = "#7a7a7a"
-# The hosts are the reference and take the ink; the STEAM amplitudes take
-# three of turblib's palette entries -- ochre, deep teal, sienna. Ochre for
-# c002 rather than the palette's slate blue: on the scaling figures the host
-# lines are thin ink, and slate read as a washed-out black beside them.
-COLOR = {"host": INK, "c002": "#C08A2D", "c005": "#1F6E6B",
+# The hosts are the reference and take the ink. The STEAM amplitudes use the
+# same three turblib entries as before, rotated so they run green -> yellow
+# -> red with increasing c and the ladder reads in order without the legend:
+# deep teal, ochre, sienna. No new colours -- teal is the green end of the
+# palette already in use, and a true yellow would be illegible on white.
+COLOR = {"host": INK, "c002": "#1F6E6B", "c005": "#C08A2D",
          "c017": "#B5502A"}
+
+# The envelope figures name this explicitly rather than borrowing an
+# amplitude's colour: there the amplitudes are pooled into one band, so the
+# band's colour is not about c, and rotating the ladder above must not
+# repaint it.
+STEAM_BAND = "#1F6E6B"
+
+# Amplitude tags in increasing c, so legends read in order whatever order
+# the npz happened to store them in.
+AMPLITUDE_ORDER = ("c002", "c005", "c017")
+
+
+def by_amplitude(tags):
+    """The given amplitude tags, ordered by increasing c.
+
+    Unknown tags keep their original order and go last, so a set added to
+    a run script but not to AMPLITUDE_ORDER still plots.
+    """
+    known = [t for t in AMPLITUDE_ORDER if t in tags]
+    return known + [t for t in tags if t not in AMPLITUDE_ORDER]
 
 
 def rcparams():
@@ -80,7 +101,7 @@ def coarsen_factor(steam_dx, host_dx):
     reason match_factors derives the vertical factors from the two z axes:
     these figures claim the two grids are on one horizontal spacing, and a
     constant here would keep claiming it after a domain in
-    run_steam_simulations.py moved. A non-integer ratio is fatal -- block
+    run_rcemip_simulations.py moved. A non-integer ratio is fatal -- block
     averaging cannot express it, and silently rounding would mismatch the
     grids by whatever the rounding threw away.
     """
@@ -123,11 +144,30 @@ def level_slice(field, z_axis, z_target, n):
     return field[..., i0:i0 + n].mean(axis=-1, dtype=np.float64)
 
 
+def level_planes(z_axis, fields, z_levels, factors):
+    """Every comparison level as a 2-D plane: {var: (nlev, ny, nx)}.
+
+    Keeping the planes rather than reducing them on the spot is what lets a
+    caller with several snapshots hand the whole pooled sample to numpy in
+    one call. The planes are small -- a coarsened RCEMIP host is ~64 x 992
+    per level, so all levels of all four variables for one snapshot come to
+    ~90 MB, against gigabytes for the field they were sliced from.
+    """
+    return {v: np.stack([level_slice(fields[v], z_axis, z, n)
+                         for z, n in zip(z_levels, factors)])
+            for v in VARS}
+
+
 def reduce_source(z_axis, fields, z_levels, factors):
     """Per-level std and cloud fraction, plus the fields the PDFs use.
 
     Cloud fraction is thresholded AFTER coarsening: the coarsened cell value
     is what the resolved field says is there.
+
+    The std here is over one source's horizontal plane, which is the right
+    quantity only when there is one source. Where several snapshots or
+    realizations are being combined, the wanted quantity is the statistic of
+    the pooled sample: keep level_planes and reduce them together.
     """
     std = {v: np.empty(z_levels.size) for v in VARS}
     cf = np.empty(z_levels.size)
@@ -137,10 +177,19 @@ def reduce_source(z_axis, fields, z_levels, factors):
         cond = (level_slice(fields["qc"], z_axis, z, n)
                 + level_slice(fields["qi"], z_axis, z, n))
         cf[j] = float((cond >= CLOUD_KGKG).mean())
+    return std, cf, pdf_slices(z_axis, fields, z_levels, factors)
+
+
+def pdf_slices(z_axis, fields, z_levels, factors):
+    """The single-level fields the PDFs are drawn from.
+
+    Separate from reduce_source so a caller that pools its own level_planes
+    can take these without reducing every level a second time.
+    """
     slices = {}
     for z_pdf in PDF_LEVELS:
         j = int(np.argmin(np.abs(z_levels - z_pdf)))
         for v in VARS:
             slices[f"{v}_{z_pdf / 1000:.0f}km"] = level_slice(
                 fields[v], z_axis, z_levels[j], factors[j]).astype(np.float32)
-    return std, cf, slices
+    return slices

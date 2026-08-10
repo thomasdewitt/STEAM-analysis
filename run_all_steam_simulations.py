@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Run every STEAM simulation this repository defines, one campaign at a time.
 
-Each subfolder owns a scripts/run_steam_simulations.py that generates its own
-runs and nothing else. This calls them in sequence, in the same interpreter
-this script was started with, and stops at the first failure.
+Each subfolder owns one or more run scripts that generate its own runs and
+nothing else. This calls them in sequence, in the same interpreter this
+script was started with, and stops at the first failure.
 
 The order is cheapest first, so a broken environment shows up in minutes
 rather than after the square campaign has run:
 
-  1. hydrodynamic-comparison -- the host-matched channel and square runs
+  1. hydrodynamic-comparison -- two scripts, RCEMIP channels then the gigaLES
+                               ensemble, cheapest first within the campaign
+                               too: a channel run is 0.09 GB against 4.3 GB
+                               for a gigaLES member
   2. fractal-analysis        -- the square campaign (the longest overall: two
                                sets of ten members, each with two nests)
   3. small-domain            -- the nested visualization runs, one per flux
@@ -32,15 +35,23 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 
-# Cheapest first; see the module docstring.
-CAMPAIGNS = ("hydrodynamic-comparison", "fractal-analysis", "small-domain")
+# Cheapest first, campaigns and the scripts within them; see the module
+# docstring. A campaign is a folder plus the run scripts it owns, in order.
+CAMPAIGNS = {
+    "hydrodynamic-comparison": ("run_rcemip_simulations.py",
+                                "run_gigales_simulations.py"),
+    "fractal-analysis": ("run_steam_simulations.py",),
+    "small-domain": ("run_steam_simulations.py",),
+}
 
 
-def script_for(campaign):
-    path = REPO / campaign / "scripts" / "run_steam_simulations.py"
-    if not path.exists():
-        raise SystemExit(f"{campaign} has no scripts/run_steam_simulations.py")
-    return path
+def scripts_for(campaign):
+    paths = [REPO / campaign / "scripts" / name
+             for name in CAMPAIGNS[campaign]]
+    missing = [p.name for p in paths if not p.exists()]
+    if missing:
+        raise SystemExit(f"{campaign} is missing scripts/{missing}")
+    return paths
 
 
 def resolve(name):
@@ -56,18 +67,22 @@ def resolve(name):
 
 
 def run(campaign):
-    script = script_for(campaign)
     print(f"\n{'=' * 70}\n=== {campaign}\n{'=' * 70}", flush=True)
     t0 = time.perf_counter()
-    # cwd is the script's own directory: these scripts import their siblings
-    # as flat modules, which only works from there.
-    result = subprocess.run([sys.executable, script.name], cwd=script.parent)
-    dt = time.perf_counter() - t0
-    if result.returncode != 0:
-        raise SystemExit(
-            f"\n{campaign} failed (exit {result.returncode}) after {dt:.0f} s; "
-            f"stopping before the remaining campaigns")
-    print(f"\n=== {campaign} complete ({dt:.0f} s)", flush=True)
+    for script in scripts_for(campaign):
+        print(f"\n--- {script.name}", flush=True)
+        t1 = time.perf_counter()
+        # cwd is the script's own directory: these scripts import their
+        # siblings as flat modules, which only works from there.
+        result = subprocess.run([sys.executable, script.name],
+                                cwd=script.parent)
+        if result.returncode != 0:
+            raise SystemExit(
+                f"\n{campaign}/{script.name} failed "
+                f"(exit {result.returncode}) after "
+                f"{time.perf_counter() - t1:.0f} s; stopping before the rest")
+    print(f"\n=== {campaign} complete "
+          f"({time.perf_counter() - t0:.0f} s)", flush=True)
 
 
 def main():
