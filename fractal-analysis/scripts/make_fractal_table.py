@@ -93,9 +93,9 @@ TIE_TOLERANCE = 0.01
 CASES = (
     ("SAM-GATE", "sam_fractal_metrics.npz", "gate"),
     ("SAM-TWPICE", "sam_fractal_metrics.npz", "twpice"),
-    (r"STEAM $c = 0.02$", "fractal_metrics_c002.npz", None),
-    (r"STEAM $c = 0.05$", "fractal_metrics_c005.npz", None),
-    (r"STEAM $c = 0.17$", "fractal_metrics_c017.npz", None),
+    (r"STEAM $\varpi = 0.02$", "fractal_metrics_c002.npz", None),
+    (r"STEAM $\varpi = 0.05$", "fractal_metrics_c005.npz", None),
+    (r"STEAM $\varpi = 0.17$", "fractal_metrics_c017.npz", None),
 )
 
 

@@ -117,7 +117,7 @@ def name(source):
     """Legend label for one source, the amplitude read off its own tag."""
     if source == "host":
         return "LES host"
-    return rf"STEAM  $c={amplitude_value(source):g}$"
+    return rf"STEAM  $\varpi={amplitude_value(source):g}$"
 
 
 def order(sources):

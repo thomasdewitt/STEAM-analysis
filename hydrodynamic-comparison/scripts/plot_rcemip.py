@@ -146,7 +146,7 @@ def group_names(L_km):
     to a reader of the paper, and the number is the thing being varied.
     """
     return {"host": GROUPS["host"][0],
-            "steam": rf"STEAM  (all $c$),  $L = {L_km:g}$ km"}
+            "steam": rf"STEAM  (all $\varpi$),  $L = {L_km:g}$ km"}
 
 
 def envelope(d, hosts, tags, key, z, x_of):

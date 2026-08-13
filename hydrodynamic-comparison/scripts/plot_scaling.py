@@ -64,8 +64,8 @@ DATA = OUTPUT / "scaling_stats.npz"
 
 VARS = ("h", "qt")
 NAME = {"gigales": {"host": "LES host"}, "rcemip": {"host": "RCEMIP hosts"}}
-STEAM_NAME = {"c002": "STEAM  $c=0.02$", "c005": "STEAM  $c=0.05$",
-              "c017": "STEAM  $c=0.17$"}
+STEAM_NAME = {"c002": r"STEAM  $\varpi=0.02$", "c005": r"STEAM  $\varpi=0.05$",
+              "c017": r"STEAM  $\varpi=0.17$"}
 WIDTH = {"gigales": 1.3, "rcemip": 0.56}
 ALPHA = {"gigales": 1.0, "rcemip": 0.65}
 # The two SAM cases share every panel, told apart by line style as in
@@ -229,7 +229,7 @@ def band_handles(case, L_km):
     stem, and `Llong` means nothing to them.
     """
     names = {"host": NAME[case]["host"],
-             "steam": rf"STEAM  (all $c$),  $L = {L_km:g}$ km"}
+             "steam": rf"STEAM  (all $\varpi$),  $L = {L_km:g}$ km"}
     return [Patch(facecolor=c, edgecolor=c, alpha=max(a, 0.35),
                   label=names[g]) for g, (c, a) in GROUPS.items()]
 

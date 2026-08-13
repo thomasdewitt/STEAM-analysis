@@ -125,7 +125,7 @@ DOMAIN_HEIGHT = 20000.0
 PROFILE_DZ = 50.0
 
 DEVICE = 'cuda'
-RUN_NESTS = True
+RUN_NESTS = False
 
 # Nest A: centered 32x32 km, full depth, target dx = 62.5 m.
 NEST_A = dict(x_start=1008, x_stop=1040, y_start=1008, y_stop=1040,
