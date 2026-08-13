@@ -1,13 +1,39 @@
 #!/usr/bin/env python3
 """Plot the matched gigaLES comparison from compute_gigales_stats.py.
 
-Two figures:
+Three figures:
 
-  gigales_profiles  per-level standard deviation of h, qt, T, qc and qi,
-                    plus cloud fraction, STEAM at three flux amplitudes
-                    against each host.
-  gigales_pdfs      single-level distributions of h, qt, qc and qi at 5 and
-                    10 km.
+  figs/gigales_profiles           per-level standard deviation of h, qt, T,
+                                  qc and qi, plus cloud fraction, STEAM at
+                                  the main-text flux amplitude.
+  figs/appendix/gigales_profiles  the same figure with all three amplitudes
+                                  drawn -- the version this script wrote
+                                  until 2026-08-13.
+  figs/gigales_pdfs               single-level distributions of h, qt, qc
+                                  and qi at 5 and 10 km, all amplitudes.
+
+ONE AMPLITUDE ON THE MAIN PROFILE FIGURE (2026-08-13). The paper's profile
+figure carries the moderate amplitude alone and sends the other two to an
+appendix, because the amplitude barely moves a standard deviation profile
+and three near-coincident ladders spent the panel on nothing.
+
+The appendix version is the SAME FIGURE AT THE SAME STEM in figs/appendix/,
+not a differently-named one beside it. What distinguishes them is which
+figure of the paper they are, and that is what the directory says; a name
+like `_allc` would have put the distinction in the filename and then still
+needed the reader to know which one the paper takes. Both are written every
+run, so the appendix version is never a rerun with a flag flipped.
+
+Which amplitudes get LINES is the only difference between them: the grey
+backdrop is the same in both, min-to-max over all thirty runs, since it is
+what bounds everything STEAM produced and that claim does not depend on
+which lines are drawn on top of it.
+
+The PDFs are not split this way. There the amplitude does separate the
+curves, so all three stay on the one figure. Neither is the RCEMIP profile
+figure, whose STEAM band pools the amplitudes and continues to -- narrowing
+that band would narrow what it is a claim about (his ruling, 2026-08-13:
+"that band should still be over the full suite").
 
 T JOINED THE PROFILE FIGURE ON 2026-08-10, drawn exactly like the four that
 were already there, and on the profiles only. A pressure panel was added
@@ -57,18 +83,20 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from common import (VARS, STD_VARS, UNITS, INK, LABEL, COLOR, by_amplitude,
-                    rcparams, style)
+from common import (VARS, STD_VARS, UNITS, INK, LABEL, COLOR, amplitude_value,
+                    by_amplitude, rcparams, require_main_set, style)
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parent                 # hydrodynamic-comparison/
 REPO = BASE.parent
 OUTPUT = BASE / "output"
 FIGS = BASE / "figs"
+# Figures the paper carries in an appendix rather than the main text. The
+# stem is the same as the main-text figure it varies, so the directory is
+# what tells them apart -- see the note above on why.
+APPENDIX = FIGS / "appendix"
 DATA = OUTPUT / "gigales_stats.npz"
 
-NAME = {"host": "LES host", "c002": "STEAM  $c=0.02$",
-        "c005": "STEAM  $c=0.05$", "c017": "STEAM  $c=0.17$"}
 CASE_NAME = {"twpice": "SAM-TWPICE", "gate": "SAM-GATE"}
 CASE_STYLE = {"twpice": "-", "gate": (0, (4, 2))}
 
@@ -83,6 +111,13 @@ BAND_ALPHA = 0.30
 GRID_TOL = 0.01            # m; the two SAM grids differ by ~0.5 mm
 
 rcparams()
+
+
+def name(source):
+    """Legend label for one source, the amplitude read off its own tag."""
+    if source == "host":
+        return "LES host"
+    return rf"STEAM  $c={amplitude_value(source):g}$"
 
 
 def order(sources):
@@ -115,11 +150,16 @@ def run_envelope(d, cases, sources, key, x_of):
     return z, stack.min(axis=0), stack.max(axis=0)
 
 
-def draw(ax, d, cases, sources, key, x_of):
-    z, lo, hi = run_envelope(d, cases, sources, key, x_of)
+def draw(ax, d, cases, band_sources, line_sources, key, x_of):
+    """The backdrop over band_sources, pooled lines for line_sources.
+
+    The two are separate arguments because the main-text figure narrows the
+    lines to one amplitude without narrowing what the backdrop bounds.
+    """
+    z, lo, hi = run_envelope(d, cases, band_sources, key, x_of)
     ax.fill_betweenx(z / 1000.0, lo, hi, color=BAND, alpha=BAND_ALPHA, lw=0,
                      zorder=0)
-    for s in order(sources):
+    for s in order(line_sources):
         for case in cases:
             ax.plot(x_of(d[f"{key}_{case}_{s}"]), d[f"{case}_z"] / 1000.0,
                     color=COLOR[s], lw=1.3, ls=CASE_STYLE[case],
@@ -127,7 +167,7 @@ def draw(ax, d, cases, sources, key, x_of):
 
 
 def legend_handles(cases, sources, n_runs=None):
-    handles = [Line2D([0], [0], color=COLOR[s], lw=1.4, label=NAME[s])
+    handles = [Line2D([0], [0], color=COLOR[s], lw=1.4, label=name(s))
                for s in sources]
     handles += [Line2D([0], [0], color=LABEL, lw=1.4, ls=CASE_STYLE[c],
                        label=CASE_NAME[c]) for c in cases]
@@ -145,19 +185,20 @@ def legend_handles(cases, sources, n_runs=None):
 NCOL = 3
 
 
-def profiles(d, cases, sources, n_runs):
+def profiles(d, cases, sources, line_sources, n_runs):
     fig, axes = plt.subplots(2, NCOL, figsize=(9.0, 6.0), sharey=True)
     flat = axes.ravel()
     panels = iter("abcdef")
 
     for ax, v in zip(flat, STD_VARS):
         label, scale, unit = UNITS[v]
-        draw(ax, d, cases, sources, f"std_{v}", lambda a, s=scale: a * s)
+        draw(ax, d, cases, sources, line_sources, f"std_{v}",
+             lambda a, s=scale: a * s)
         style(ax, next(panels), f"std({label})  [{unit}]",
               "height  [km]" if ax in (flat[0], flat[NCOL]) else "")
 
     cf_ax = flat[len(STD_VARS)]
-    draw(cf_ax, d, cases, sources, "cf", lambda a: a)
+    draw(cf_ax, d, cases, sources, line_sources, "cf", lambda a: a)
     style(cf_ax, next(panels), "cloud fraction", "")
     cf_ax.set_xlim(left=0)
 
@@ -172,7 +213,7 @@ def profiles(d, cases, sources, n_runs):
     for ax in flat[:used]:
         ax.set_ylim(0, top)
     fig.tight_layout()
-    fig.legend(handles=legend_handles(cases, sources, n_runs),
+    fig.legend(handles=legend_handles(cases, line_sources, n_runs),
                loc="upper center", ncol=4, handlelength=1.8,
                bbox_to_anchor=(0.5, 1.09),
                title=f"lines pooled over {int(d['n_members'])} realizations")
@@ -225,12 +266,13 @@ def pdfs(d, cases, sources):
     return fig
 
 
-def save(fig, stem):
-    fig.savefig(FIGS / f"{stem}.pdf", bbox_inches="tight", pad_inches=0.05)
-    fig.savefig(FIGS / f"{stem}.png", dpi=200, bbox_inches="tight",
+def save(fig, stem, into=FIGS):
+    into.mkdir(parents=True, exist_ok=True)
+    fig.savefig(into / f"{stem}.pdf", bbox_inches="tight", pad_inches=0.05)
+    fig.savefig(into / f"{stem}.png", dpi=200, bbox_inches="tight",
                 pad_inches=0.05, facecolor="white")
     plt.close(fig)
-    print(f"wrote {stem}.pdf and {stem}.png")
+    print(f"wrote {into.relative_to(BASE)}/{stem}.pdf and .png")
 
 
 def main():
@@ -239,14 +281,17 @@ def main():
                          f"compute_gigales_stats.py first")
     d = np.load(DATA)
     cases = [str(c) for c in d["cases"]]
-    sources = ("host", *by_amplitude([str(s) for s in d["sets"]]))
+    sets = by_amplitude([str(s) for s in d["sets"]])
+    sources = ("host", *sets)
+    main_sources = ("host", require_main_set(sets))
 
     for case in cases:
         n_steam, n_host = d[f"{case}_n_steam"], d[f"{case}_n_host"]
         f = int(d[f"{case}_xy_coarsen"])
         print(f"{case}: {d[f'{case}_z'].size} levels to "
-              f"{d[f'{case}_z'].max() / 1000:.1f} km; host {f}x{f} coarsened "
-              f"to {float(d[f'{case}_dx']):.0f} m; STEAM vertically coarsened "
+              f"{d[f'{case}_z'].max() / 1000:.1f} km; host {f}x{f}x{f} "
+              f"coarsened to {float(d[f'{case}_dx']):.0f} m; "
+              f"STEAM vertically coarsened "
               f"by {n_steam.min()}-{n_steam.max()}, host by "
               f"{n_host.min()}-{n_host.max()}")
     print(f"cloud fraction threshold {float(d['cloud_kgkg']) * 1e3:g} g/kg")
@@ -256,7 +301,14 @@ def main():
     print(f"{len(cases)} cases x {len(sources) - 1} amplitudes x "
           f"{n_members} members = {n_runs} STEAM runs")
 
-    save(profiles(d, cases, sources, n_runs), "gigales_profiles")
+    print(f"profile lines: {main_sources[1]} in figs/, all {len(sets)} "
+          f"amplitudes in figs/appendix/; the backdrop bounds all "
+          f"{n_runs} runs on both")
+
+    save(profiles(d, cases, sources, main_sources, n_runs),
+         "gigales_profiles")
+    save(profiles(d, cases, sources, sources, n_runs),
+         "gigales_profiles", into=APPENDIX)
     save(pdfs(d, cases, sources), "gigales_pdfs")
 
 

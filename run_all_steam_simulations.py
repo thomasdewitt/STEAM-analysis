@@ -35,13 +35,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 
-# Cheapest first, campaigns and the scripts within them; see the module
-# docstring. A campaign is a folder plus the run scripts it owns, in order.
 CAMPAIGNS = {
+    "small-domain": ("run_steam_simulations.py",),
     "hydrodynamic-comparison": ("run_rcemip_simulations.py",
                                 "run_gigales_simulations.py"),
     "fractal-analysis": ("run_steam_simulations.py",),
-    "small-domain": ("run_steam_simulations.py",),
 }
 
 

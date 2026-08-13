@@ -71,35 +71,34 @@ RUNS = REPO / "runs" / "small-domain"
 PROFILES = REPO / "runs" / "input_profiles"
 
 PROFILE_HOST = "cm1"      
-SETS = {"c002": 0.02, "c005": 0.05, "c017": 0.17}
+SETS = {"c002": 0.02, 
+        "c005": 0.05, 
+        "c017": 0.17
+        }
 
-# spheroscale tag -> (l_s [m], outer scale [m]). The tag is the spheroscale in
-# metres, zero-padded to four digits. Each case carries its own L because a
-# single L cannot serve both; see the module docstring. Order is free now that
-# every run shares SEED -- nothing is derived from position in this dict.
 SPHEROSCALES = {
-    "s0010": (10.0, 40960.0),
-    "s1000": (1000.0, 10240.0),
+    "s0010": (10.0, 20480.0),
+    "s0030": (30.0, 20480.0),
+    "s0100": (100.0, 20480.0),
 }
 
-NX, NY = 2048, 512
-DX = 20.0
-# NX, NY = 2048/4, 512/4
-# DX = 80.0
-DOMAIN_HEIGHT = 5500.0
+DX = 10.0
+NX, NY = 2048, 1024
+DOMAIN_HEIGHT = 4000.0
 PROFILE_DZ = 50.0
 DEVICE = "cuda"
 
-SEED = 7002
+SEED = 7001
 
 
 RUN_NEST = True
+STREAM = False
 
 # The nest, in its OWN cells at its own spacing -- set these three and nothing
 # else. The parent-cell window refine() wants is derived and centered, so the
 # nest cannot be placed off the edge of the parent by hand.
-NEST_NX, NEST_NY = 512, 256        # nest cells, so 2:1 at NEST_DX below
-NEST_DX = 5.0                      # nest spacing [m]
+NEST_NX, NEST_NY = 512, 1024       # nest cells, so 2:1 at NEST_DX below
+NEST_DX = 2.5
 NEST_GROUP = "refinements/r0"
 
 
@@ -121,7 +120,8 @@ def nest_window(parent_cells, nest_cells, axis):
         raise SystemExit(
             f"nest {axis} extent {nest_cells * NEST_DX:.4g} m is {span} "
             f"parent cells, wider than the parent's {parent_cells}")
-    start = (parent_cells - span) // 2
+    # start = (parent_cells - span) // 2
+    start = 0
     return start, start + span
 
 
@@ -243,6 +243,12 @@ def run_parent(set_tag, sphero_tag, out_nc):
         compress=True,
         device=DEVICE,
         save_for_refinement=RUN_NEST,
+        # dx = 5 at this footprint is ~34 GB per field: far past resident RAM,
+        # exactly what the streamed path exists for. Scratch lands beside the
+        # output; the preflight prints exact scratch/output byte demands and
+        # refuses if the disk is short, so a too-big config fails in seconds,
+        # not hours.
+        stream_to_disk=STREAM,
     )
     compute_diagnostics(str(out_nc), compress=True, device=DEVICE)
     print(f"{out_nc.name} parent done in {time.perf_counter() - t0:.0f} s "

@@ -107,6 +107,27 @@ cascade with a 384 km one into one band would hide the distinction the axis
 exists to show. `plot_rcemip.members()` refuses any STEAM tag it has no
 grouping for, and refuses a figure handed more than one outer scale.
 
+**One amplitude on the main-text gigaLES profile figure (2026-08-13), and
+`figs/appendix/`.** The paper's gigaLES profile figure carries a single flux
+amplitude and sends the multi-amplitude version to an appendix, since the
+amplitude barely moves a standard deviation profile. `plot_gigales.py`
+writes both every run from the one cached npz: `figs/gigales_profiles` at
+`common.MAIN_SET` (= `c005`) alone, and `figs/appendix/gigales_profiles`
+with all three — the same stem, the directory saying which figure of the
+paper it is, rather than a `_allc` suffix that would put the distinction in
+the filename and still leave the reader to know which one the paper takes.
+`require_main_set` stops the figure if that amplitude is not in the npz
+rather than falling back to another. Only the LINES narrow: the grey
+backdrop bounds all thirty runs in both, since what STEAM's full spread
+covers does not depend on which lines sit on top of it.
+
+This does **not** touch the RCEMIP profile figures, which keep one STEAM
+envelope pooled over every amplitude (his ruling, 2026-08-13: *"that band
+should still be over the full suite"*). Narrowing the band would narrow what
+it is a claim about — that band is the analogue of the grey backdrop, not of
+the lines. Nor does it touch either set of PDF figures, where the amplitude
+separates the curves and showing that is the point.
+
 The RCEMIP profile, PDF and scaling figures all draw two envelopes — the
 min-to-max across hosts and across STEAM runs — rather than one line per
 run, pooling the flux amplitudes into the STEAM band and never the outer
@@ -153,7 +174,12 @@ Two resolution conventions, deliberately different:
   *that* grid per level, whichever field is locally finer averaged by the
   nearest integer factor that closes the gap. Coarsening the host vertically
   moved the gigaLES STEAM factor from 1–4 to 3–7 and halved the comparison
-  levels, 223 to 112.
+  levels, 223 to 112. The 2 is not written down anywhere: the block factor is
+  `coarsen_factor(steam_dx, host_dx)` and the same factor is applied to all
+  three axes, so it is 2 only because every run generator puts STEAM at twice
+  its host's horizontal spacing. Change that ratio and the blocks follow it
+  vertically too, and `main.tex`'s "2x2x2" quietly stops being true — the run
+  print says which factor was used.
 - **Scaling functions** (`compute_scaling.py`) are at native resolution on
   both sides. Matching resolutions there would destroy the thing being
   measured; the curves simply start at different smallest lags.
@@ -246,6 +272,8 @@ carries both, and the PDF of each is force-added past the `*.pdf` ignore rule
 MB across the nine of them. The PNGs stay local: they are the same plots at
 3.5 MB, for looking at rather than for typesetting. A new figure is not
 tracked until someone `git add -f`s its PDF, so add it in the same commit as
-the script that draws it. The text tables written beside the figures
+the script that draws it. A `figs/appendix/` subfolder holds figures the
+paper carries in an appendix, at the same stem as the main-text figure they
+vary, and follows the same rule. The text tables written beside the figures
 (`*_fractal_metrics.txt`, `fractal_table.tex`) are tracked as well, since they
 carry the numbers the paper quotes.

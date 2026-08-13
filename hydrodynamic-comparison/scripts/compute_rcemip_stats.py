@@ -227,7 +227,8 @@ def do_host(host, out):
                 out[f"pdf_{k}_{host}_{tag}_{lscale}"] = a
 
     print(f"  {host}: {z_levels.size} levels to {z_levels[-1]:.0f} m, "
-          f"host {xy_coarsen}x{xy_coarsen} coarsened to {steam_dx:.0f} m, "
+          f"host {xy_coarsen}x{xy_coarsen}x{xy_coarsen} coarsened to "
+          f"{steam_dx:.0f} m, "
           f"STEAM coarsened by {sorted(set(n_steam.tolist()))}, "
           f"host by {sorted(set(n_host.tolist()))}", flush=True)
 

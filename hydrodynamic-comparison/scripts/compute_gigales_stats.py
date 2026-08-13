@@ -356,7 +356,8 @@ def do_case(case, out):
     out[f"{case}_dx"] = steam_dx
     out[f"{case}_xy_coarsen"] = xy_coarsen
     print(f"{case}: {z_levels.size} levels to {z_levels[-1]:.0f} m; "
-          f"host {xy_coarsen}x{xy_coarsen} coarsened to {steam_dx:.0f} m; "
+          f"host {xy_coarsen}x{xy_coarsen}x{xy_coarsen} coarsened to "
+          f"{steam_dx:.0f} m; "
           f"STEAM coarsened by {sorted(set(n_steam.tolist()))}, "
           f"host by {sorted(set(n_host.tolist()))}", flush=True)
 

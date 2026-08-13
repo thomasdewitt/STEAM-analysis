@@ -68,6 +68,43 @@ STEAM_BAND = "#1F6E6B"
 # the npz happened to store them in.
 AMPLITUDE_ORDER = ("c002", "c005", "c017")
 
+# THE AMPLITUDE THE MAIN-TEXT PROFILE FIGURES SHOW (2026-08-13). The paper
+# carries one amplitude on the profile figures and sends the other two to an
+# appendix -- "profiles ... for the moderate value c_F ... Profiles for other
+# values of c_F are shown in Appendix () and not substantially different"
+# (main.tex, Fig. profile stats). Both plot scripts therefore draw each
+# profile figure twice: the main stem at MAIN_SET alone, and an `_allc` stem
+# carrying every amplitude. The PDF figures are NOT split -- there the
+# amplitude does separate the curves ("the effect of changing c is more
+# noticable"), so all three stay in the main text.
+MAIN_SET = "c005"
+
+
+def amplitude_value(tag):
+    """The flux amplitude c behind a set tag.
+
+    The tag is `c` followed by c x 100 zero-padded to three digits, one
+    convention across all three campaigns (CLAUDE.md, flux amplitudes). Read
+    rather than tabulated so a new amplitude labels itself, and refused
+    outright rather than guessed at when the tag does not follow the rule --
+    a legend that mislabels which c it drew is worse than no figure.
+    """
+    if not (len(tag) == 4 and tag[0] == "c" and tag[1:].isdigit()):
+        raise SystemExit(
+            f"set tag {tag!r} does not follow the c<NNN> naming convention, "
+            f"so the flux amplitude it stands for cannot be read off it")
+    return int(tag[1:]) / 100.0
+
+
+def require_main_set(tags):
+    """MAIN_SET, checked to be among the amplitudes actually on disk."""
+    if MAIN_SET not in tags:
+        raise SystemExit(
+            f"the main-text profile figure is drawn at {MAIN_SET}, which is "
+            f"not among the amplitudes in this npz ({sorted(tags)}); rerun "
+            f"the campaign for it or move MAIN_SET in common.py")
+    return MAIN_SET
+
 
 def by_amplitude(tags):
     """The given amplitude tags, ordered by increasing c.
