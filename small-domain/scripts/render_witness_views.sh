@@ -30,8 +30,10 @@ witness "$RUNS/small_c002_s0100.nc" --output "$SPHERO_DIR" --size 1920 700 --gro
 witness "$RUNS/small_c002_s0030.nc" --output "$INTER_DIR" --size 1920 1080 --group parent --nest-group nest --camera-position 0.853042805498 -0.363875335448 -0.987484355444 --camera-azimuth 79.8 --camera-elevation 30 --fov 100 --sun-azimuth 20 --sun-elevation 55 --periodic --gamma 1.66 --white-point 15 --contrast 1 --haze 1
 witness "$RUNS/small_c005_s0030.nc" --output "$INTER_DIR" --size 1920 1080 --group parent --nest-group nest --camera-position 0.853042805498 -0.363875335448 -0.987484355444 --camera-azimuth 79.8 --camera-elevation 30 --fov 100 --sun-azimuth 20 --sun-elevation 55 --periodic --gamma 1.66 --white-point 15 --contrast 1 --haze 1
 witness "$RUNS/small_c017_s0030.nc" --output "$INTER_DIR" --size 1920 1080 --group parent --nest-group nest --camera-position 0.853042805498 -0.363875335448 -0.987484355444 --camera-azimuth 79.8 --camera-elevation 30 --fov 100 --sun-azimuth 20 --sun-elevation 55 --periodic --gamma 1.66 --white-point 15 --contrast 1 --haze 1
-# Real image comparison
-#witness "$RUNS/small_c002_s0030_center_nest.nc" --output "$OUT" --size 1920 1080 --group parent --nest-group nest --camera-position -0.176105149115 -0.00938793029458 -0.987484355444 --camera-azimuth 81.48 --camera-elevation 29.6 --fov 100 --sun-azimuth 287 --sun-elevation 61 --gamma 1.66 --white-point 15 --contrast 1 --haze 1
+
+# Introductory image
+# witness "$RUNS/small_c002_s0100.nc" --output "$OUT" --size 4000 3000 --group parent --nest-group nest --camera-position 0.82854244016 -0.685508341159 -0.77 --camera-azimuth 59.4 --camera-elevation 10 --fov 80 --sun-azimuth 20 --sun-elevation 55 --periodic --gamma 1.66 --white-point 15 --contrast 1 --haze 1;
+witness "$RUNS/small_c002_s0100.nc" --output "$OUT" --size 4000 3000 --group parent --nest-group nest --camera-position 0.911461519518 -0.536014667707 -0.993581514763 --camera-azimuth 148.56 --camera-elevation 28.88 --fov 100 --sun-azimuth 20 --sun-elevation 55 --periodic --exposure 3.86376735762 --gamma 1.66 --white-point 15 --contrast 1 --haze 1
 
 # --- Composites ---------------------------------------------------------
 # Both read the PNGs witness just wrote, and fail on a missing one rather
