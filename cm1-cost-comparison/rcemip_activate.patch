@@ -1,0 +1,117 @@
+--- a/src/radiation_driver.F
++++ b/src/radiation_driver.F
+@@ -393,13 +393,10 @@
+                       declin,degrad,xlong,xlat,coszen,hrang)
+ 
+         IF( testcase.eq.8 )THEN
+-          ! Bretherton et al 2005 (fixed values):
+-          solcon = 650.83
+-          coszen = cos(50.5*pi/180.0)
+-!!!          ! rcemip:
+-!!!          solcon = 551.58
+-!!!          coszen = cos(42.05*pi/180.0)
+-!!!          albd = 0.07
++          ! rcemip:
++          solcon = 551.58
++          coszen = cos(42.05*pi/180.0)
++          albd = 0.07
+         ENDIF
+ 
+         if( nstep.le.1 .and. myid.eq.0 )then
+--- a/src/module_ra_rrtmg_lw.F
++++ b/src/module_ra_rrtmg_lw.F
+@@ -11678,33 +11678,33 @@
+ ! Set trace gas volume mixing ratios, 2005 values, IPCC (2007)
+ ! carbon dioxide (379 ppmv)
+     real :: co2
+-    data co2 / 379.e-6 / 
+-!!!    data co2 / 348.e-6 /    ! rcemip
++!!!    data co2 / 379.e-6 / 
++    data co2 / 348.e-6 /    ! rcemip
+ ! methane (1774 ppbv)
+     real :: ch4
+-    data ch4 / 1774.e-9 / 
+-!!!    data ch4 / 1650.e-9 /    ! rcemip
++!!!    data ch4 / 1774.e-9 / 
++    data ch4 / 1650.e-9 /    ! rcemip
+ ! nitrous oxide (319 ppbv)
+     real :: n2o
+-    data n2o / 319.e-9 / 
+-!!!    data n2o / 306.e-9 /    ! rcemip
++!!!    data n2o / 319.e-9 / 
++    data n2o / 306.e-9 /    ! rcemip
+ ! cfc-11 (251 ppt)
+     real :: cfc11
+-    data cfc11 / 0.251e-9 / 
+-!!!    data cfc11 / 0.0 /    ! rcemip
++!!!    data cfc11 / 0.251e-9 / 
++    data cfc11 / 0.0 /    ! rcemip
+ ! cfc-12 (538 ppt)
+     real :: cfc12
+-    data cfc12 / 0.538e-9 / 
+-!!!    data cfc12 / 0.0 /    ! rcemip
++!!!    data cfc12 / 0.538e-9 / 
++    data cfc12 / 0.0 /    ! rcemip
+ #endif
+ ! cfc-22 (169 ppt)
+     real :: cfc22
+-    data cfc22 / 0.169e-9 / 
+-!!!    data cfc22 / 0.0 /    ! rcemip
++!!!    data cfc22 / 0.169e-9 / 
++    data cfc22 / 0.0 /    ! rcemip
+ ! ccl4 (93 ppt)
+     real :: ccl4
+-    data ccl4 / 0.093e-9 / 
+-!!!    data ccl4 / 0.0 /    ! rcemip
++!!!    data ccl4 / 0.093e-9 / 
++    data ccl4 / 0.0 /    ! rcemip
+ ! Set oxygen volume mixing ratio (for o2mmr=0.23143)
+     real :: o2
+     data o2 / 0.209488 /
+@@ -12286,8 +12286,8 @@
+                endif
+             endif
+             ENDIF
+-!!!           ! RCEMIP:
+-!!!           o3vmr(ncol,k) = ( 1.0d-6 * 3.6478d0 * ( dble(play(ncol,k))**0.83209d0 ) * exp( -dble(play(ncol,k))/11.3515d0 ) )
++           ! RCEMIP:
++           o3vmr(ncol,k) = ( 1.0d-6 * 3.6478d0 * ( dble(play(ncol,k))**0.83209d0 ) * exp( -dble(play(ncol,k))/11.3515d0 ) )
+          enddo
+         else
+          do k = kts, nlayers
+--- a/src/module_ra_rrtmg_sw.F
++++ b/src/module_ra_rrtmg_sw.F
+@@ -10135,16 +10135,16 @@
+ ! Set trace gas volume mixing ratios, 2005 values, IPCC (2007)
+ ! carbon dioxide (379 ppmv)
+     real :: co2
+-    data co2 / 379.e-6 / 
+-!!!    data co2 / 348.e-6 /    ! rcemip
++!!!    data co2 / 379.e-6 / 
++    data co2 / 348.e-6 /    ! rcemip
+ ! methane (1774 ppbv)
+     real :: ch4
+-    data ch4 / 1774.e-9 / 
+-!!!    data ch4 / 1650.e-9 /    ! rcemip
++!!!    data ch4 / 1774.e-9 / 
++    data ch4 / 1650.e-9 /    ! rcemip
+ ! nitrous oxide (319 ppbv)
+     real :: n2o
+-    data n2o / 319.e-9 / 
+-!!!    data n2o / 306.e-9 /    ! rcemip
++!!!    data n2o / 319.e-9 / 
++    data n2o / 306.e-9 /    ! rcemip
+ ! Set oxygen volume mixing ratio (for o2mmr=0.23143)
+     real :: o2
+     data o2 / 0.209488 /
+@@ -10610,8 +10610,8 @@
+                endif
+             endif
+             ENDIF
+-!!!           ! RCEMIP:
+-!!!           o3vmr(ncol,k) = ( 1.0d-6 * 3.6478d0 * ( dble(play(ncol,k))**0.83209d0 ) * exp( -dble(play(ncol,k))/11.3515d0 ) )
++           ! RCEMIP:
++           o3vmr(ncol,k) = ( 1.0d-6 * 3.6478d0 * ( dble(play(ncol,k))**0.83209d0 ) * exp( -dble(play(ncol,k))/11.3515d0 ) )
+          enddo
+         else
+          do k = kts, kte+1
